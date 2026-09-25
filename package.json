@@ -2,7 +2,7 @@
   "name": "projectlauncher",
   "license": "MIT",
   "private": true,
-  "version": "1.0.20",
+  "version": "1.0.21",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -44,7 +44,6 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.4",
     "use-sound": "^5.0.0",
-    "warp": "^1.1.4",
     "zustand": "^4.5.1"
   },
   "devDependencies": {
