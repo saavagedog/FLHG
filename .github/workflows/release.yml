@@ -1,4 +1,4 @@
-name: Release Fishky Launcher
+name: Release Project Fishk
 
 on:
   push:
@@ -42,10 +42,10 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           VITE_UPDATER_CONFIGURED: "true"
-          VITE_LAUNCHER_VERSION: "1.0.24"
+          VITE_LAUNCHER_VERSION: "1.0.25"
         with:
           tagName: v__VERSION__
-          releaseName: Fishky Launcher v__VERSION__
+          releaseName: Project Fishk v__VERSION__
           releaseBody: Signed Windows installer and updater artifacts.
           releaseDraft: false
           prerelease: false

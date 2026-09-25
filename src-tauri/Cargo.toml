@@ -1,7 +1,7 @@
 [package]
 name = "projectlauncher"
-version = "1.0.24"
-description = "project launcher"
+version = "1.0.25"
+description = "Project Fishk launcher"
 authors = ["Project"]
 edition = "2021"
 build = "build.rs"

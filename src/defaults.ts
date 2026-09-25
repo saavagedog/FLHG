@@ -14,7 +14,7 @@ export type DefaultsType = {
 const env = import.meta.env;
 
 export const Defaults: DefaultsType = {
-  LAUNCHER_NAME: env.VITE_LAUNCHER_NAME || "Project",
+  LAUNCHER_NAME: env.VITE_LAUNCHER_NAME || "Project Fishk",
   BACKEND_URL: env.VITE_BACKEND_URL || "http://127.0.0.1:3551",
   DISCORD_LINK: env.VITE_DISCORD_LINK || "https://example.com",
   LOGO_URL: env.VITE_LOGO_URL || "/Images/logo.png",

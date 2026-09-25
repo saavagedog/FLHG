@@ -108,7 +108,7 @@ export default function Onboard() {
   const [user, setUser] = useState<UserData | null>(null);
   const [builds, setBuilds] = useState<BuildItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [eor, setEor] = useState(false);
+  const [eor, setEor] = useState(() => localStorage.getItem("gameSetting.eor") === "true");
   const [ror, setRor] = useState(false);
   const [disablePreedits, setDisablePreedits] = useState(false);
   const [bubbleBuilds, setBubbleBuilds] = useState(false);
@@ -590,6 +590,10 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
       } catch { /* ignore */ }
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("gameSetting.eor", String(eor));
+  }, [eor]);
 
   useEffect(() => {
     localStorage.setItem("SettingsMP.builds", JSON.stringify(builds));

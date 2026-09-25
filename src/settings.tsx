@@ -111,7 +111,7 @@ function Settings() {
   const [collapsed] = useState(false);
 
   // --- persistent Switch: Auto Launch ---
-  const [EOR, setEOR] = useState<boolean>(false);
+  const [EOR, setEOR] = useState<boolean>(() => localStorage.getItem("gameSetting.eor") === "true");
 
   useEffect(() => {
     const savedPath = localStorage.getItem("buildPath");
@@ -126,10 +126,6 @@ function Settings() {
       }
     }
 
-    const raw = localStorage.getItem("autoLaunchEnabled");
-    if (raw !== null) {
-      setEOR(raw === "true");
-    }
   }, []);
 
   const handleFolderSelect = async () => {
@@ -154,7 +150,7 @@ function Settings() {
   // Switch persistieren sobald geändert
   const handleToggleEOR = (next: boolean) => {
     setEOR(next);
-    localStorage.setItem("EOR", String(next));
+    localStorage.setItem("gameSetting.eor", String(next));
   };
 
   return (
@@ -239,7 +235,7 @@ function Settings() {
                   <Toggle
                     checked={EOR}
                     onChange={handleToggleEOR}
-                    label="Edit/Reset on release"
+                    label="Edit on release"
                     description=""
                   />
                 </div>

@@ -4008,7 +4008,7 @@ dependencies = [
 
 [[package]]
 name = "projectlauncher"
-version = "1.0.24"
+version = "1.0.25"
 dependencies = [
  "async-std",
  "dirs 6.0.0",

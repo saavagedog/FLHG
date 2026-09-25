@@ -69,7 +69,7 @@ async fn main() {
 
     carter::start_discord_rpc();
     
-    let app_name = env::var("VITE_LAUNCHER_NAME").unwrap_or_else(|_| "Project".to_string());
+    let app_name = env::var("VITE_LAUNCHER_NAME").unwrap_or_else(|_| "Project Fishk".to_string());
     let path = format!("C:\\Program Files\\{}", app_name);
 
     if let Err(e) = create_dir_all(&path) {

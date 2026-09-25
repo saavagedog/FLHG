@@ -32,7 +32,7 @@ use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 
 pub fn start_discord_rpc() {
     let app_id = std::env::var("VITE_DISCORD_CLIENT_ID").unwrap_or_default();
-    let launcher_name = std::env::var("VITE_LAUNCHER_NAME").unwrap_or_else(|_| "Project".to_string());
+    let launcher_name = std::env::var("VITE_LAUNCHER_NAME").unwrap_or_else(|_| "Project Fishk".to_string());
     let discord_link = std::env::var("VITE_DISCORD_LINK").unwrap_or_default();
 
     tokio::spawn(async move {

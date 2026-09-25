@@ -6,8 +6,8 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "Project Launcher",
-    "version": "1.0.24"
+    "productName": "Project Fishk",
+    "version": "1.0.25"
   },
   "tauri": {
     "updater": {
@@ -51,7 +51,7 @@
         "fullscreen": false,
         "maximizable": false,
         "resizable": true,
-        "title": "Project Fishky",
+        "title": "Project Fishk",
         "decorations": false,
         "center": true,
         "transparent": true,
@@ -68,7 +68,7 @@
       "identifier": "com.project.launcher",
       "icon": [
         "icons/icon.icns",
-        "icons/logo.ico"
+        "icons/Logo.ico"
       ],
       "resources": []
     }
