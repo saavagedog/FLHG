@@ -13,7 +13,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/rayanyoute2-star/fishky-launcher-updates/releases/latest/download/latest.json"
+        "https://github.com/saavagedog/FLHG/releases/latest/download/latest.json"
       ],
       "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4OEYwNzk3RkQ3Q0YyNjEKUldSaDhuejlsd2VQK05iemcxTzBaVmp3RWorVnFPUTZWekZYUUN1dkE2MlRoUU5nU0FPOHdmbzcK"
