@@ -1,0 +1,76 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Project Launcher",
+    "version": "1.0.20"
+  },
+  "tauri": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/rayanyoute2-star/fishky-launcher-updates/releases/latest/download/latest.json"
+      ],
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4OEYwNzk3RkQ3Q0YyNjEKUldSaDhuejlsd2VQK05iemcxTzBaVmp3RWorVnFPUTZWekZYUUN1dkE2MlRoUU5nU0FPOHdmbzcK"
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/rayanyoute2-star/fishky-launcher-updates/releases/latest/download/latest.json"
+      ],
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4OEYwNzk3RkQ3Q0YyNjEKUldSaDhuejlsd2VQK05iemcxTzBaVmp3RWorVnFPUTZWekZYUUN1dkE2MlRoUU5nU0FPOHdmbzcK"
+    },
+    "allowlist": {
+      "http": {
+        "all": true,
+        "request": true,
+        "scope": ["http://26.30.86.1:3551/*", "http://localhost:3551/*", "https://fortnite-api.com/*"]
+      },
+      "shell": {
+        "all": true,
+        "execute": true
+      },
+      "all": true,
+      "protocol": {
+        "all": true,
+        "assetScope": ["*/**"]
+      },
+      "fs": {
+        "all": true,
+        "scope": ["*/**"]
+      }
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "maximizable": false,
+        "resizable": true,
+        "title": "Project Fishky",
+        "decorations": false,
+        "center": true,
+        "transparent": true,
+        "minWidth": 1250,
+        "minHeight": 650
+      }
+    ],
+    "security": {
+      "csp": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob:;"
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.project.launcher",
+      "icon": [
+        "icons/icon.icns",
+        "icons/logo.ico"
+      ],
+      "resources": []
+    }
+  }
+}
