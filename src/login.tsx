@@ -124,6 +124,7 @@ export default function Login() {
             username?: string;
             discordId?: string;
             avatarHash?: string | null;
+            isAdmin?: boolean;
           };
           message?: string;
         };
@@ -139,6 +140,7 @@ export default function Login() {
           username: data.user.username ?? (data.user.email ? data.user.email.split("@")[0] : "Player"),
           discordId: data.user.discordId ?? "",
           avatarHash: data.user.avatarHash ?? null,
+          isAdmin: data.user.isAdmin === true,
         };
 
         setUsername(sessionUser.username);

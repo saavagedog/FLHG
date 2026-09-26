@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Project Fishk",
-    "version": "1.0.26"
+    "version": "1.0.27"
   },
   "tauri": {
     "updater": {
@@ -18,19 +18,11 @@
       "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4OEYwNzk3RkQ3Q0YyNjEKUldSaDhuejlsd2VQK05iemcxTzBaVmp3RWorVnFPUTZWekZYUUN1dkE2MlRoUU5nU0FPOHdmbzcK"
     },
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/rayanyoute2-star/fishky-launcher-updates/releases/latest/download/latest.json"
-      ],
-      "dialog": false,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4OEYwNzk3RkQ3Q0YyNjEKUldSaDhuejlsd2VQK05iemcxTzBaVmp3RWorVnFPUTZWekZYUUN1dkE2MlRoUU5nU0FPOHdmbzcK"
-    },
     "allowlist": {
       "http": {
         "all": true,
         "request": true,
-        "scope": ["http://26.30.86.1:3551/*", "http://localhost:3551/*", "https://fortnite-api.com/*"]
+        "scope": ["http://26.30.86.1:3551/*", "http://localhost:3551/*", "http://localhost:3552/*", "http://127.0.0.1:3552/*", "https://fortnite-api.com/*"]
       },
       "shell": {
         "all": true,

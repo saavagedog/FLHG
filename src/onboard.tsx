@@ -8,6 +8,7 @@ import { join } from "@tauri-apps/api/path";
 import { useNavigate } from "react-router-dom";
 import { fetch, ResponseType } from "@tauri-apps/api/http";
 import { Defaults } from "./defaults";
+import NewsPanel from "./NewsPanel";
 import { motion, AnimatePresence } from "framer-motion";
 import { appWindow } from "@tauri-apps/api/window";
 import { listen } from '@tauri-apps/api/event';
@@ -25,6 +26,8 @@ import {
   CloudDownload,
   Newspaper,
   Download,
+  Eye,
+  EyeOff,
   Minus,
   X
 } from "lucide-react";
@@ -36,6 +39,7 @@ interface UserData {
   username?: string;
   discordId?: string;
   avatarHash?: string | null;
+  isAdmin?: boolean;
 }
 
 interface ArenaLeaderboardEntry {
@@ -83,6 +87,14 @@ type BuildDownloadProgress = {
   etaSeconds: number | null;
 };
 type UpdateTrackerStatus = "browser" | "setup" | "checking" | "current" | "available" | "installing" | "error";
+type LauncherTheme = "midnight" | "ember" | "grove" | "rose";
+
+const launcherThemes: { id: LauncherTheme; name: string; accent: string; colors: string[] }[] = [
+  { id: "midnight", name: "Midnight", accent: "#78c9ff", colors: ["#101b2d", "#14323b", "#78c9ff"] },
+  { id: "ember", name: "Ember", accent: "#ff986a", colors: ["#251612", "#43241c", "#ff986a"] },
+  { id: "grove", name: "Grove", accent: "#91d69a", colors: ["#102019", "#1c3427", "#91d69a"] },
+  { id: "rose", name: "Rose", accent: "#f0789a", colors: ["#24131d", "#421e31", "#f0789a"] },
+];
 
 function formatEta(seconds: number | null) {
   if (seconds === null) return "Calculating time remaining";
@@ -98,6 +110,43 @@ function formatTransferRate(bytesPerSecond: number) {
   if (bytesPerSecond >= 1024) return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
   return `${bytesPerSecond} B/s`;
 }
+
+function formatBytes(bytes: number | null) {
+  if (bytes === null) return "Unknown";
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
+const TabTransition: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 5 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -5 }}
+    transition={{ duration: 0.15, ease: "linear" }}
+    className="w-full"
+  >
+    {children}
+  </motion.div>
+);
+
+const NavItem = ({ icon, label, id, active, setActive }: {
+  icon: React.ReactNode;
+  label: string;
+  id: TabKey;
+  active: TabKey;
+  setActive: (value: TabKey) => void;
+}) => (
+  <button
+    onClick={() => setActive(id)}
+    data-active={active === id}
+    className="launcher-nav-item cursor-pointer relative w-full flex items-center gap-3 px-4 py-3 rounded-md transition-all duration-200 group z-10"
+  >
+    <span className="launcher-nav-icon transition-colors">{icon}</span>
+    <span className="text-sm font-medium">{label}</span>
+  </button>
+);
 
 /* -------------------- Component -------------------- */
 export default function Onboard() {
@@ -120,7 +169,14 @@ export default function Onboard() {
   const [isBuildDownload, setIsBuildDownload] = useState(false);
   const [downloadEta, setDownloadEta] = useState<number | null>(null);
   const [downloadRate, setDownloadRate] = useState(0);
-  const [accentColor, setAccentColor] = useState(() => localStorage.getItem("launcherAccentColor") ?? "#a9a5ff");
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
+  const [downloadTotalBytes, setDownloadTotalBytes] = useState<number | null>(null);
+  const [showDownloadDetails, setShowDownloadDetails] = useState(false);
+  const [accentColor, setAccentColor] = useState(() => localStorage.getItem("launcherAccentColor") ?? "#78c9ff");
+  const [theme, setTheme] = useState<LauncherTheme>(() => {
+    const savedTheme = localStorage.getItem("launcherTheme");
+    return launcherThemes.some((item) => item.id === savedTheme) ? savedTheme as LauncherTheme : "midnight";
+  });
   const [heroVideoUnavailable, setHeroVideoUnavailable] = useState(false);
   const [updateTrackerStatus, setUpdateTrackerStatus] = useState<UpdateTrackerStatus>("browser");
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
@@ -187,6 +243,7 @@ useEffect(() => {
         setIsDownloading(true);
         setIsBuildDownload(false);
         setWarningMsg("");
+        setShowDownloadDetails(false);
     });
   const unlistenProgress = listen<number>('download-progress', (e) => setProgress(e.payload));
   const unlistenStatus = listen<string>('update-status', (e) => setCurrentStatus(e.payload));
@@ -203,6 +260,9 @@ useEffect(() => {
     setProgress(0);
     setDownloadEta(null);
     setDownloadRate(0);
+    setDownloadedBytes(0);
+    setDownloadTotalBytes(null);
+    setShowDownloadDetails(false);
     setCurrentStatus("Connecting to build host...");
     setWarningMsg("");
   });
@@ -210,6 +270,8 @@ useEffect(() => {
     setProgress(event.payload.percent);
     setDownloadEta(event.payload.etaSeconds);
     setDownloadRate(event.payload.bytesPerSecond);
+    setDownloadedBytes(event.payload.downloadedBytes);
+    setDownloadTotalBytes(event.payload.totalBytes);
   });
   const unlistenBuildComplete = listen<string>('build-download-complete', () => {
     setProgress(100);
@@ -234,19 +296,7 @@ useEffect(() => {
   };
 }, []);
 
-/* -------------------- Animations -------------------- */
-const TabTransition: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 5 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -5 }}
-    transition={{ duration: 0.15, ease: "linear" }}
-    className="w-full"
-  >
-    {children}
-  </motion.div>
-);
-
+/* -------------------- Panels -------------------- */
 const LeaderboardPanel: React.FC = () => {
   const [entries, setEntries] = useState<ArenaLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -881,20 +931,6 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
   </div>
 );
 
-const NavItem = ({ icon, label, id, active, setActive }: any) => {
-  const isActive = active === id;
-  return (
-    <button
-      onClick={() => setActive(id)}
-      data-active={isActive}
-      className="launcher-nav-item cursor-pointer relative w-full flex items-center gap-3 px-4 py-3 rounded-md transition-all duration-200 group z-10"
-    >
-      <span className="launcher-nav-icon transition-colors">{icon}</span>
-      <span className="text-sm font-medium">{label}</span>
-    </button>
-  );
-};
-
   /* Hero carousel / featured area (Epic-like big banner) */
   const HeroBanner: React.FC = () => {
   const current = builds.find((b) => b.path === path) ?? builds[0];
@@ -1104,22 +1140,6 @@ const NavItem = ({ icon, label, id, active, setActive }: any) => {
 );
 
   /* News / patch notes full list */
-  const NewsPanel: React.FC = () => (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div><div className="text-xl font-semibold">News</div><div className="text-xs text-slate-400">Patch notes & announcements</div></div>
-      </div>
-
-      <div className="launcher-surface min-h-64 rounded-md flex flex-col items-center justify-center text-center px-6 py-12">
-        <div className="launcher-accent-text w-12 h-12 rounded-full bg-white/[0.06] flex items-center justify-center mb-4">
-          <Newspaper size={22} />
-        </div>
-        <p className="text-sm font-semibold text-slate-200">No announcements available</p>
-        <p className="text-xs text-slate-500 mt-2">Launcher and community updates will appear here.</p>
-      </div>
-    </div>
-  );
-
 const SettingsPanel: React.FC<{
   eor: boolean; setEor: (v: boolean) => void;
   ror: boolean; setRor: (v: boolean) => void;
@@ -1128,12 +1148,13 @@ const SettingsPanel: React.FC<{
   bubbleBuilds: boolean; setBubbleBuilds: (v: boolean) => void;
   mobileBuilds: boolean; setMobileBuilds: (v: boolean) => void;
   accentColor: string; setAccentColor: (color: string) => void;
+  theme: LauncherTheme; onSelectTheme: (theme: LauncherTheme) => void;
   updateTrackerStatus: UpdateTrackerStatus;
   updateTrackerMessage: string;
   updateManifest: UpdateManifest | null;
   onCheckForUpdates: () => void;
   onInstallAvailableUpdate: () => void;
-}> = ({ eor, setEor, ror, setRor, bubbleBuilds, setBubbleBuilds, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, updateTrackerStatus, updateTrackerMessage, updateManifest, onCheckForUpdates, onInstallAvailableUpdate }) => {
+}> = ({ eor, setEor, ror, setRor, bubbleBuilds, setBubbleBuilds, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, theme, onSelectTheme, updateTrackerStatus, updateTrackerMessage, updateManifest, onCheckForUpdates, onInstallAvailableUpdate }) => {
 
   return (
     <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -1258,6 +1279,29 @@ const SettingsPanel: React.FC<{
           </div>
         </div>
 
+        <div className="launcher-surface md:col-span-2 rounded-md p-6">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-white">Launcher theme</h3>
+            <p className="mt-1 text-xs text-slate-400">Choose a saved color atmosphere for this device.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Launcher theme">
+            {launcherThemes.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => onSelectTheme(preset.id)}
+                aria-pressed={theme === preset.id}
+                className={`flex min-w-0 items-center gap-3 rounded-md border px-3 py-2 text-left text-xs font-semibold transition-colors ${theme === preset.id ? "border-white/50 bg-white/10 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`}
+              >
+                <span className="flex h-6 w-8 shrink-0 overflow-hidden rounded-sm border border-white/20" aria-hidden="true">
+                  {preset.colors.map((color) => <span key={color} className="h-full flex-1" style={{ backgroundColor: color }} />)}
+                </span>
+                <span className="truncate">{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="launcher-surface md:col-span-2 flex flex-wrap items-center justify-between gap-6 rounded-md p-6">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -1329,21 +1373,29 @@ const SettingsPanel: React.FC<{
     </div>
   );
 };
+
+  const [LeaderboardPanelView] = useState<React.FC>(() => LeaderboardPanel);
+  const [ShopPanelView] = useState<React.FC>(() => ShopPanel);
+
+  const selectTheme = (nextTheme: LauncherTheme) => {
+    const preset = launcherThemes.find((item) => item.id === nextTheme);
+    if (!preset) return;
+    setTheme(nextTheme);
+    setAccentColor(preset.accent);
+    localStorage.setItem("launcherTheme", nextTheme);
+    localStorage.setItem("launcherAccentColor", preset.accent);
+  };
+
 /* -------------------- Render main layout -------------------- */
   return (
-  <div className="launcher-app w-screen h-screen flex text-slate-100 relative overflow-hidden rounded-xl border border-white/10" style={{ "--launcher-lime": accentColor } as React.CSSProperties}>
+  <div className="launcher-app w-screen h-screen flex text-slate-100 relative overflow-hidden rounded-xl border border-white/10" data-theme={theme} style={{ "--launcher-lime": accentColor } as React.CSSProperties}>
 
-    <CustomTitleBar />
+    {CustomTitleBar()}
 
     {/* Main content */}
     <div className="relative z-10 flex w-full h-full pt-8">
       {/* Pass props to LeftNav */}
-      <LeftNav 
-        active={active} 
-        setActive={setActive} 
-        user={user} 
-        handleLogout={handleLogout} 
-      />
+      {LeftNav({ active, setActive, user, handleLogout })}
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Pass user to TopBar */}
@@ -1366,7 +1418,7 @@ const SettingsPanel: React.FC<{
   <AnimatePresence mode="wait">
     {active === "home" && (
       <TabTransition key="home">
-        <HeroBanner />
+        {HeroBanner({})}
         
         {/* Container with items-stretch to force equal height columns */}
         <div className="flex flex-col lg:flex-row items-stretch gap-6 mt-4">
@@ -1460,47 +1512,48 @@ const SettingsPanel: React.FC<{
           )}
             {active === "library" && (
               <TabTransition key="library">
-                <LibraryPanel />
+                {LibraryPanel({})}
               </TabTransition>
             )}
 
             {active === "news" && (
               <TabTransition key="news">
-                <NewsPanel />
+                <NewsPanel user={user} />
               </TabTransition>
             )}
 
             {active === "shop" && (
               <TabTransition key="shop">
-                <ShopPanel />
+                <ShopPanelView />
               </TabTransition>
             )}
 
             {active === "settings" && (
               <TabTransition key="settings">
-                <SettingsPanel 
-                  eor={eor} setEor={setEor}
-                  ror={ror} setRor={setRor}
-                  disablePreedits={disablePreedits} setDisablePreedits={setDisablePreedits}
-                  bubbleBuilds={bubbleBuilds} setBubbleBuilds={setBubbleBuilds}
-                  mobileBuilds={mobileBuilds} setMobileBuilds={setMobileBuilds}
-                  accentColor={accentColor}
-                  setAccentColor={(color) => {
+                {SettingsPanel({
+                  eor, setEor, ror, setRor,
+                  disablePreedits, setDisablePreedits,
+                  bubbleBuilds, setBubbleBuilds,
+                  mobileBuilds, setMobileBuilds,
+                  accentColor,
+                  theme,
+                  onSelectTheme: selectTheme,
+                  setAccentColor: (color) => {
                     setAccentColor(color);
                     localStorage.setItem("launcherAccentColor", color);
-                  }}
-                  updateTrackerStatus={updateTrackerStatus}
-                  updateTrackerMessage={updateTrackerMessage}
-                  updateManifest={updateManifest}
-                  onCheckForUpdates={checkForUpdates}
-                  onInstallAvailableUpdate={installAvailableUpdate}
-                />
+                  },
+                  updateTrackerStatus,
+                  updateTrackerMessage,
+                  updateManifest,
+                  onCheckForUpdates: checkForUpdates,
+                  onInstallAvailableUpdate: installAvailableUpdate,
+                })}
               </TabTransition>
             )}
 
             {active === "leaderboard" && (
               <TabTransition key="leaderboard">
-                <LeaderboardPanel />
+                <LeaderboardPanelView />
               </TabTransition>
             )}
           </AnimatePresence>
@@ -1508,41 +1561,77 @@ const SettingsPanel: React.FC<{
             {isDownloading && (
               <motion.div 
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-md"
+                className="fixed inset-0 z-[999] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
               >
                 <motion.div 
                   initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
-                  className={`w-[400px] p-8 rounded-3xl bg-[#0b1724] border shadow-2xl text-center transition-colors duration-300 ${warningMsg ? "border-red-500 shadow-red-500/20" : "border-white/10"}`}
+                  className={`grid w-full max-w-[760px] overflow-hidden rounded-lg border bg-[#101820] text-left shadow-2xl transition-colors duration-300 md:grid-cols-[260px_minmax(0,1fr)] ${warningMsg ? "border-red-500 shadow-red-500/20" : "border-white/10"}`}
                 >
-                  {warningMsg ? (
-                      <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-6">
-                          <X className="w-8 h-8 text-red-500" />
-                      </div>
-                  ) : (
-                      <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto mb-6" />
-                  )}
-
-                    <h2 className="text-xl font-black uppercase italic tracking-tighter text-white mb-2">
-                      {warningMsg ? "Download Error" : isBuildDownload ? (progress >= 100 ? "Installing Build" : "Downloading Build") : "Syncing Build"}
-                  </h2>
-                  
-                  <p className={`text-[10px] font-bold uppercase tracking-widest mb-6 ${warningMsg ? "text-red-400" : "text-slate-400"}`}>
-                      {warningMsg || currentStatus || "Verifying Files..."}
-                  </p>
-                  
-                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mb-2">
-                    <motion.div 
-                      className={`h-full shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-colors duration-300 ${warningMsg ? "bg-red-500" : "bg-blue-500"}`}
-                      animate={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-500 font-bold">{progress}%</p>
-                  {isBuildDownload && !warningMsg && (
-                    <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-slate-400">
-                      <span>{downloadRate > 0 ? formatTransferRate(downloadRate) : currentStatus}</span>
-                      <span>{progress >= 100 ? "Extracting files" : formatEta(downloadEta)}</span>
+                  <div className="relative min-h-36 overflow-hidden bg-black/40 md:min-h-[340px]">
+                    <img src={Defaults.PLACEHOLDER_IMAGE} alt="Game artwork" className="absolute inset-0 h-full w-full object-cover opacity-75" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
+                    <div className="absolute bottom-5 left-5 right-5">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/65">Game library</div>
+                      <div className="mt-1 text-xl font-bold text-white">Fortnite</div>
+                      <div className="mt-1 text-xs text-white/65">{isBuildDownload ? "Build download" : "File sync"}</div>
                     </div>
-                  )}
+                  </div>
+                  <div className="min-w-0 p-5 md:p-7">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{warningMsg ? "Download issue" : currentStatus || "Preparing download"}</p>
+                        <h2 className="mt-2 truncate text-xl font-bold text-white">{warningMsg ? "Could not finish" : progress >= 100 && isBuildDownload ? "Installing build" : "Downloading game"}</h2>
+                      </div>
+                      {warningMsg ? <X className="mt-1 shrink-0 text-red-400" size={20} /> : <Download className="mt-1 shrink-0 text-[var(--launcher-lime)]" size={20} />}
+                    </div>
+
+                    <div className="mt-7 flex items-end justify-between gap-4">
+                      <span className="text-sm text-slate-400">{warningMsg || "Progress"}</span>
+                      <span className="text-3xl font-bold tabular-nums text-white">{Math.max(0, Math.min(progress, 100))}%</span>
+                    </div>
+                    <div
+                      className="mt-3 h-2 overflow-hidden rounded-full bg-white/10"
+                      role="progressbar"
+                      aria-label="Build download progress"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.max(0, Math.min(progress, 100))}
+                    >
+                      <motion.div
+                        className={`h-full rounded-full ${warningMsg ? "bg-red-500" : "bg-[var(--launcher-lime)]"}`}
+                        animate={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    </div>
+
+                    <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
+                      <span className="text-xs font-medium text-slate-300">Transfer details</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowDownloadDetails((visible) => !visible)}
+                        className="grid h-9 w-9 place-items-center rounded-md text-slate-300 transition hover:bg-white/10 hover:text-white"
+                        aria-label={showDownloadDetails ? "Hide download details" : "Show download details"}
+                        title={showDownloadDetails ? "Hide download details" : "Show download details"}
+                      >
+                        {showDownloadDetails ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                    <AnimatePresence initial={false}>
+                      {showDownloadDetails && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="grid grid-cols-2 gap-x-5 gap-y-4 overflow-hidden pt-2"
+                        >
+                          <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Speed</div><div className="mt-1 text-sm font-semibold text-white">{downloadRate > 0 ? formatTransferRate(downloadRate) : "Calculating"}</div></div>
+                          <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Network rate</div><div className="mt-1 text-sm font-semibold text-white">{downloadRate > 0 ? `${(downloadRate * 8 / 1_000_000).toFixed(1)} Mbps` : "Calculating"}</div></div>
+                          <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Downloaded</div><div className="mt-1 text-sm font-semibold text-white">{formatBytes(downloadedBytes)} / {formatBytes(downloadTotalBytes)}</div></div>
+                          <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Time remaining</div><div className="mt-1 text-sm font-semibold text-white">{progress >= 100 ? "Finishing up" : formatEta(downloadEta)}</div></div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </motion.div>
               </motion.div>
             )}

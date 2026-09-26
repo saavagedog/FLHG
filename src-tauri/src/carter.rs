@@ -111,26 +111,42 @@ pub fn kill_epic() {
 }
 
 pub async fn download(url: &str, filename: &str, path: &str, window: &tauri::Window) -> Result<(), String> {
-    println!("Downloading {} from: {}", filename, url);
-    
-    let full_url = if url.ends_with('/') || url.is_empty() {
-        format!("{}{}", url, filename)
+    let trimmed_url = url.trim();
+    if trimmed_url.is_empty() {
+        return Err("Download URL is empty. Configure a valid DLL URL before launching.".to_string());
+    }
+
+    let safe_filename = if filename.trim().is_empty() {
+        trimmed_url.rsplit('/').next().unwrap_or("download.bin")
     } else {
-        url.to_string()
+        filename
+    };
+
+    println!("Downloading {} from: {}", safe_filename, trimmed_url);
+
+    let full_url = if trimmed_url.ends_with('/') {
+        format!("{}{}", trimmed_url, safe_filename)
+    } else {
+        trimmed_url.to_string()
     };
 
     let response = reqwest::get(&full_url)
         .await
-        .map_err(|e| format!("Network error: {}", e))?;
+        .map_err(|e| format!("Network error while fetching {}: {}", safe_filename, e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed for {}: {}", filename, response.status()));
+        return Err(format!("Download failed for {}: {}", safe_filename, response.status()));
     }
 
-    let _ = window.emit("update-status", format!("Downloading: {}", filename));
+    let _ = window.emit("update-status", format!("Downloading: {}", safe_filename));
 
-    let content = response.bytes().await.map_err(|e| e.to_string())?;
-    std::fs::write(path, content).map_err(|e| format!("File Error: {}", e))?;
+    let parent = std::path::Path::new(path).parent().unwrap_or_else(|| std::path::Path::new("."));
+    if !parent.exists() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Could not create parent directory {}: {}", parent.display(), e))?;
+    }
+
+    let content = response.bytes().await.map_err(|e| format!("Failed to read response for {}: {}", safe_filename, e))?;
+    std::fs::write(path, content).map_err(|e| format!("File Error while writing {}: {}", path, e))?;
     
     Ok(())
 }
@@ -300,6 +316,12 @@ pub async fn launch_real_launcher(root: &str) -> Result<bool, String> {
 #[tauri::command]
 pub async fn dll_replace(path: &str, url: String, _app: tauri::AppHandle) -> Result<bool, String> {
     use tauri::Manager;
+
+    let trimmed_url = url.trim();
+    if trimmed_url.is_empty() {
+        println!("DLL replacement skipped: no valid redirect URL configured.");
+        return Ok(true);
+    }
     
     let path_buf = std::path::PathBuf::from(path);
     let mut nvidia_path = path_buf.clone();
@@ -312,7 +334,10 @@ pub async fn dll_replace(path: &str, url: String, _app: tauri::AppHandle) -> Res
     let window = _app.get_window("main").ok_or("Main window not found")?;
     let target_str = nvidia_path.to_str().unwrap();
 
-    download(&url, "", target_str, &window).await?;
+    if let Err(err) = download(trimmed_url, "GFSDK_Aftermath_Lib.x64.dll", target_str, &window).await {
+        eprintln!("DLL replacement failed: {}", err);
+        return Ok(false);
+    }
 
     Ok(true)
 }

@@ -1,19 +1,51 @@
 .launcher-app {
   --launcher-ink: #11172b;
   --launcher-line: rgba(204, 211, 249, 0.13);
-  --launcher-lime: #a9a5ff;
+  --launcher-page-a: #101b2d;
+  --launcher-page-b: #14323b;
+  --launcher-page-c: #172236;
+  --launcher-sidebar-bg: rgba(17, 31, 47, 0.82);
+  --launcher-panel-bg: rgba(25, 45, 59, 0.7);
+  --launcher-card-bg: rgba(22, 39, 55, 0.76);
   color: #f3f3fb;
   background:
-    radial-gradient(ellipse at 18% 45%, rgba(54, 89, 158, 0.34), transparent 43%),
-    radial-gradient(ellipse at 92% 78%, rgba(105, 50, 117, 0.3), transparent 42%),
-    linear-gradient(135deg, #11172b, #17172f 55%, #21182f);
+    radial-gradient(ellipse at 18% 45%, color-mix(in srgb, var(--launcher-lime), transparent 84%), transparent 43%),
+    radial-gradient(ellipse at 92% 78%, color-mix(in srgb, var(--launcher-page-b), transparent 20%), transparent 42%),
+    linear-gradient(135deg, var(--launcher-page-a), var(--launcher-page-c) 55%, var(--launcher-page-b));
   font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.launcher-app[data-theme="ember"] {
+  --launcher-page-a: #251612;
+  --launcher-page-b: #43241c;
+  --launcher-page-c: #30201b;
+  --launcher-sidebar-bg: rgba(45, 26, 21, 0.84);
+  --launcher-panel-bg: rgba(61, 35, 28, 0.72);
+  --launcher-card-bg: rgba(51, 31, 26, 0.8);
+}
+
+.launcher-app[data-theme="grove"] {
+  --launcher-page-a: #102019;
+  --launcher-page-b: #1c3427;
+  --launcher-page-c: #17271f;
+  --launcher-sidebar-bg: rgba(17, 39, 28, 0.84);
+  --launcher-panel-bg: rgba(30, 56, 39, 0.72);
+  --launcher-card-bg: rgba(24, 45, 33, 0.8);
+}
+
+.launcher-app[data-theme="rose"] {
+  --launcher-page-a: #24131d;
+  --launcher-page-b: #421e31;
+  --launcher-page-c: #321927;
+  --launcher-sidebar-bg: rgba(43, 22, 34, 0.84);
+  --launcher-panel-bg: rgba(58, 29, 45, 0.72);
+  --launcher-card-bg: rgba(49, 25, 39, 0.8);
 }
 
 .launcher-sidebar {
   flex: 0 0 82px;
   width: 82px;
-  background: rgba(21, 26, 53, 0.72);
+  background: var(--launcher-sidebar-bg);
   border-color: var(--launcher-line);
   backdrop-filter: blur(22px);
 }
@@ -56,7 +88,7 @@
 
 .launcher-hero {
   min-height: 280px;
-  background: #20223b;
+  background: var(--launcher-card-bg);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
 }
 
@@ -92,12 +124,12 @@
 }
 
 .launcher-surface {
-  background: rgba(36, 39, 67, 0.42);
+  background: var(--launcher-panel-bg);
   border: 1px solid var(--launcher-line);
 }
 
 .launcher-news-item {
-  background: rgba(39, 41, 71, 0.4);
+  background: var(--launcher-card-bg);
   border: 1px solid var(--launcher-line);
 }
 
@@ -111,12 +143,12 @@
 }
 
 .launcher-download-feature {
-  background: rgba(31, 34, 61, 0.7);
+  background: var(--launcher-card-bg);
   box-shadow: 0 20px 50px rgba(3, 5, 20, 0.25);
 }
 
 .launcher-download-tile {
-  background: rgba(29, 32, 59, 0.62);
+  background: var(--launcher-panel-bg);
 }
 
 .launcher-library-actions {

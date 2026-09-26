@@ -35,6 +35,10 @@ async fn firstlaunch(
     let inject_dlls = env::var("VITE_INJECT_DLLS_LINKS").unwrap_or_default();
     let paks = env::var("VITE_PAKS_AND_SIGS_LINKS").unwrap_or_default();
 
+    if dll_url.trim().is_empty() && inject_dlls.trim().is_empty() {
+        println!("Launcher startup: no valid DLL replacement or injection URL configured, skipping DLL patch step.");
+    }
+
     carter::launch_fn(&path, dll_url, inject_dlls, paks, app, email, password, eor).await
 }
 
