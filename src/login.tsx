@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { open } from "@tauri-apps/api/shell";
-import { fetch, ResponseType } from "@tauri-apps/api/http";
+import { fetch, ResponseType, Body } from "@tauri-apps/api/http";
 import { Defaults } from "./defaults";
 import { Minus, X } from "lucide-react";
 import { appWindow } from "@tauri-apps/api/window";
@@ -104,29 +104,46 @@ export default function Login() {
     }
 
     try {
-      const params = new URLSearchParams({
-        email: form.email,
-        password: form.password,
-      });
-
-      const response = await fetch(`${Defaults.BACKEND_URL}/api/launcher/login?${params.toString()}`, {
-        method: "GET",
-        responseType: ResponseType.Text,
+      const response = await fetch(`${Defaults.BACKEND_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: Body.json({
+          email: form.email,
+          password: form.password,
+        }),
+        responseType: ResponseType.JSON,
       });
 
       if (response.ok) {
-        const data = JSON.parse(response.data as string);
-        const sessionUser = {
-            email: form.email,
-            password: form.password,
-            username: data.username,
-            discordId: data.discordId,
-            avatarHash: data.avatarHash
+        const data = (response.data ?? {}) as {
+          success?: boolean;
+          user?: {
+            email?: string;
+            username?: string;
+            discordId?: string;
+            avatarHash?: string | null;
+          };
+          message?: string;
         };
-        
-        setUsername(data.username);
-        setDiscordId(data.discordId);
-        setAvatarHash(data.avatarHash);
+
+        if (!data.user) {
+          setError("Login response was invalid.");
+          return;
+        }
+
+        const sessionUser = {
+          email: data.user.email ?? form.email,
+          password: form.password,
+          username: data.user.username ?? (data.user.email ? data.user.email.split("@")[0] : "Player"),
+          discordId: data.user.discordId ?? "",
+          avatarHash: data.user.avatarHash ?? null,
+        };
+
+        setUsername(sessionUser.username);
+        setDiscordId(sessionUser.discordId);
+        setAvatarHash(sessionUser.avatarHash ?? "");
 
         if (remember) {
           localStorage.setItem("user", JSON.stringify(sessionUser));
@@ -134,8 +151,11 @@ export default function Login() {
         setIsSuccess(true);
         setTimeout(() => navigate("/onboard"), 2000);
       } else {
-        const serverMessage = response.data as string;
-        setError(response.status === 400 && serverMessage === "Error!" ? "Wrong Credentials" : (serverMessage || "An error occurred."));
+        const payload = (response.data ?? {}) as { message?: string };
+        const serverMessage = typeof response.data === "string"
+          ? response.data
+          : payload.message || "Wrong credentials or Discord account not linked.";
+        setError(serverMessage || "Wrong credentials or Discord account not linked.");
       }
     } catch (err) {
       console.error(err);
