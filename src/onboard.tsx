@@ -159,7 +159,8 @@ export default function Onboard() {
   const [builds, setBuilds] = useState<BuildItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [eor, setEor] = useState(() => localStorage.getItem("gameSetting.eor") === "true");
-  const [ror, setRor] = useState(false);
+  const [ror, setRor] = useState(() => localStorage.getItem("gameSetting.ror") === "true");
+  const [clientDllPath, setClientDllPath] = useState("");
   const [disablePreedits, setDisablePreedits] = useState(false);
   const [bubbleBuilds, setBubbleBuilds] = useState(() => localStorage.getItem("gameSetting.bubbleBuilds") === "true");
   const [isApplyingBubbleBuilds, setIsApplyingBubbleBuilds] = useState(false);
@@ -658,6 +659,7 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
       try { setUser(JSON.parse(savedUser)); } catch { /* ignore */ }
     }
     setErbiumDllPath(localStorage.getItem("erbiumDllPath") || "");
+    setClientDllPath(localStorage.getItem("erbiumClientDllPath") || "");
 
     const savedBuilds = localStorage.getItem("SettingsMP.builds");
     if (savedBuilds) {
@@ -687,6 +689,10 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
   useEffect(() => {
     localStorage.setItem("gameSetting.eor", String(eor));
   }, [eor]);
+
+  useEffect(() => {
+    localStorage.setItem("gameSetting.ror", String(ror));
+  }, [ror]);
 
   useEffect(() => {
     localStorage.setItem("gameSetting.bubbleBuilds", String(bubbleBuilds));
@@ -818,6 +824,8 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
       email: user.email,
       password: user.password,
       eor: eor,
+      ror: ror,
+      clientDllPath: clientDllPath,
       disablePreedits: disablePreedits,
       stretchResolutionEnabled,
       resolutionWidth,
@@ -842,6 +850,18 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     setErbiumDllPath(selected);
     localStorage.setItem("erbiumDllPath", selected);
     return selected;
+  };
+
+  const selectClientDll = async () => {
+    if (!requireDesktopRuntime()) return;
+    const selected = await open({
+      multiple: false,
+      title: "Select the ErbiumClient.dll with Reset on Release support",
+      filters: [{ name: "Erbium Client DLL", extensions: ["dll"] }],
+    });
+    if (typeof selected !== "string") return;
+    setClientDllPath(selected);
+    localStorage.setItem("erbiumClientDllPath", selected);
   };
 
   const handleErbiumHost = async () => {
@@ -1376,6 +1396,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
 const SettingsPanel: React.FC<{
   eor: boolean; setEor: (v: boolean) => void;
   ror: boolean; setRor: (v: boolean) => void;
+  clientDllPath: string; onSelectClientDll: () => void;
   disablePreedits: boolean;
   setDisablePreedits: (v: boolean) => void;
   bubbleBuilds: boolean; setBubbleBuilds: (v: boolean) => void;
@@ -1392,7 +1413,7 @@ const SettingsPanel: React.FC<{
   onOpenPakFolder: () => void;
   onCheckForUpdates: () => void;
   onInstallAvailableUpdate: () => void;
-}> = ({ eor, setEor, ror, setRor, bubbleBuilds, setBubbleBuilds, isApplyingBubbleBuilds, stretchResolutionEnabled, setStretchResolutionEnabled, resolutionWidth, setResolutionWidth, resolutionHeight, setResolutionHeight, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, theme, onSelectTheme, updateTrackerStatus, updateTrackerMessage, updateManifest, onOpenPakFolder, onCheckForUpdates, onInstallAvailableUpdate }) => {
+}> = ({ eor, setEor, ror, setRor, clientDllPath, onSelectClientDll, bubbleBuilds, setBubbleBuilds, isApplyingBubbleBuilds, stretchResolutionEnabled, setStretchResolutionEnabled, resolutionWidth, setResolutionWidth, resolutionHeight, setResolutionHeight, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, theme, onSelectTheme, updateTrackerStatus, updateTrackerMessage, updateManifest, onOpenPakFolder, onCheckForUpdates, onInstallAvailableUpdate }) => {
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -1430,12 +1451,16 @@ const SettingsPanel: React.FC<{
           <div className="flex items-center justify-between group">
             <div>
               <p className="text-sm font-black text-slate-200 group-hover:text-white transition-colors uppercase italic tracking-tighter">Reset on Release</p>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 text-amber-500/80">IN DEVELOPMENT: Instant Reset</p>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">{clientDllPath ? "Confirms a reset when released" : "Select ErbiumClient.dll below to enable"}</p>
             </div>
             <button
               type="button"
-              onClick={() => setRor(!ror)} 
-              className={`cursor-pointer relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ${ror ? "bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]" : "bg-white/10"}`}
+              role="switch"
+              aria-checked={ror}
+              aria-label="Reset on Release"
+              disabled={!clientDllPath}
+              onClick={() => setRor(!ror)}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ${clientDllPath ? "cursor-pointer" : "cursor-not-allowed opacity-50"} ${ror ? "bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]" : "bg-white/10"}`}
             >
               <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${ror ? "translate-x-6" : "translate-x-1"}`} />
             </button>
@@ -1455,6 +1480,18 @@ const SettingsPanel: React.FC<{
               className={`cursor-pointer relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ${disablePreedits ? "bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]" : "bg-white/10"}`}
             >
               <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${disablePreedits ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+          <div className="h-px bg-white/5" />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-slate-200 uppercase italic tracking-tighter">Erbium Client DLL</p>
+              <p className="mt-1 truncate text-[10px] text-slate-500">{clientDllPath || "Required for the custom Reset on Release hook"}</p>
+            </div>
+            <button type="button" onClick={onSelectClientDll} className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">
+              <FolderOpen size={14} />
+              {clientDllPath ? "Change DLL" : "Select DLL"}
             </button>
           </div>
           <div className="pt-6" /> 
@@ -1605,7 +1642,7 @@ const SettingsPanel: React.FC<{
         <div className="launcher-surface md:col-span-2 flex flex-wrap items-center justify-between gap-6 rounded-md p-6">
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold text-white">Local PAK / SIG files</h3>
-            <p className="mt-2 text-xs text-slate-400">Place files in Documents/Project Fishk/Paks. New files are copied into game builds when added or launched.</p>
+            <p className="mt-2 text-xs text-slate-400">Files in Documents/Project Fishk/Paks are copied into game builds when added or launched.</p>
           </div>
           <button
             type="button"
@@ -1835,6 +1872,8 @@ const SettingsPanel: React.FC<{
               <TabTransition key="settings">
                 {SettingsPanel({
                   eor, setEor, ror, setRor,
+                  clientDllPath,
+                  onSelectClientDll: () => { void selectClientDll(); },
                   disablePreedits, setDisablePreedits,
                   bubbleBuilds, setBubbleBuilds: handleBubbleBuildsToggle,
                   isApplyingBubbleBuilds,

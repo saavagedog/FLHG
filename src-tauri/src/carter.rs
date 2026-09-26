@@ -291,6 +291,10 @@ fn get_pak_drop_folder() -> Result<std::path::PathBuf, String> {
 }
 
 fn copy_paks_from_folder(game_root: &str, source_folder: &std::path::Path) -> Result<usize, String> {
+    if !source_folder.exists() {
+        return Ok(0);
+    }
+
     let paks_path = std::path::Path::new(game_root)
         .join("FortniteGame")
         .join("Content")
@@ -328,9 +332,24 @@ fn copy_paks_from_folder(game_root: &str, source_folder: &std::path::Path) -> Re
     Ok(copied)
 }
 
-pub fn sync_paks_from_folder(game_root: &str) -> Result<usize, String> {
-    let source_folder = get_pak_drop_folder()?;
-    copy_paks_from_folder(game_root, &source_folder)
+fn get_bundled_pak_folder(app: &AppHandle) -> std::path::PathBuf {
+    app.path_resolver()
+        .resource_dir()
+        .map(|resource_dir| resource_dir.join("resources").join("paks"))
+        .filter(|path| path.is_dir())
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("paks")
+        })
+}
+
+pub fn sync_paks_from_folder(game_root: &str, app: &AppHandle) -> Result<usize, String> {
+    let bundled_folder = get_bundled_pak_folder(app);
+    let player_folder = get_pak_drop_folder()?;
+    let bundled_count = copy_paks_from_folder(game_root, &bundled_folder)?;
+    let player_count = copy_paks_from_folder(game_root, &player_folder)?;
+    Ok(bundled_count + player_count)
 }
 
 #[tauri::command]
@@ -344,8 +363,8 @@ pub fn open_pak_drop_folder_cmd() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn sync_paks_cmd(game_root: String) -> Result<usize, String> {
-    sync_paks_from_folder(&game_root)
+pub fn sync_paks_cmd(game_root: String, app: AppHandle) -> Result<usize, String> {
+    sync_paks_from_folder(&game_root, &app)
 }
 
 const BUBBLE_PAK_URL: &str = "https://github.com/saavagedog/PAKS/raw/refs/heads/main/pakchunkBubble-WindowsClient_P.pak";
@@ -597,11 +616,21 @@ pub async fn launch_fn(
     email: String,
     password: String,
     eor: bool,
+    ror: bool,
+    client_dll_path: String,
     stretch_resolution_enabled: bool,
     resolution_width: u32,
     resolution_height: u32,
 ) -> Result<bool, String> {
-    sync_paks_from_folder(path)?;
+    let client_dll_path = client_dll_path.trim();
+    if ror && client_dll_path.is_empty() {
+        return Err("Select the ErbiumClient.dll to use Reset on Release.".to_string());
+    }
+    if !client_dll_path.is_empty() && !std::path::Path::new(client_dll_path).is_file() {
+        return Err("The selected ErbiumClient.dll could not be found.".to_string());
+    }
+
+    sync_paks_from_folder(path, &app)?;
 
     if let Err(e) = dll_replace(path, redirect_url, app.clone()).await {
         return Err(format!("Could not replace DLL: {}", e));
@@ -647,6 +676,9 @@ pub async fn launch_fn(
     if eor {
         fort_args.push("-eor".to_string());
     }
+    if ror {
+        fort_args.push("-ror".to_string());
+    }
     if stretch_resolution_enabled {
         if !(640..=7680).contains(&resolution_width) || !(480..=4320).contains(&resolution_height) {
             return Err("Stretch resolution must be between 640x480 and 7680x4320.".to_string());
@@ -668,6 +700,11 @@ pub async fn launch_fn(
     PLAYER_GAME_PID.store(pid, Ordering::SeqCst);
 
     tokio::time::sleep(Duration::from_secs(60)).await;
+
+    if !client_dll_path.is_empty() {
+        inject_dll(pid, client_dll_path)
+            .map_err(|error| format!("Could not inject ErbiumClient.dll: {error}"))?;
+    }
 
     if !inject_urls.is_empty() {
         let window = app.get_window("main").ok_or("No window")?;

@@ -98,7 +98,7 @@ pub fn start_erbium_host(
     }
 
     HOST_STOP_REQUESTED.store(false, Ordering::SeqCst);
-    if let Err(error) = carter::sync_paks_from_folder(&game_root.to_string_lossy()) {
+    if let Err(error) = carter::sync_paks_from_folder(&game_root.to_string_lossy(), &app) {
         HOST_RUNNING.store(false, Ordering::SeqCst);
         return Err(error);
     }

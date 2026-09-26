@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Project Fishk",
-    "version": "1.0.37"
+    "version": "1.0.46"
   },
   "tauri": {
     "updater": {

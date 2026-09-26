@@ -2,7 +2,7 @@
   "name": "projectlauncher",
   "license": "MIT",
   "private": true,
-  "version": "1.0.37",
+  "version": "1.0.46",
   "type": "module",
   "scripts": {
     "dev": "vite",

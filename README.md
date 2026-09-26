@@ -2,7 +2,7 @@
 # To start
 Open the "tauri_install.bat"
 Then rename ".env.example" to ".env"
-You can edit name, backend url, discord link, logo image, background image, redirect link, injects dlls, and paks coming soon
+You can edit name, backend URL, Discord link, logo image, background image, redirect link, and inject DLL URLs. Public launcher builds do not bundle Fortnite PAK/SIG files. Players can place files they are authorized to use in `Documents/Project Fishk/Paks`, and the launcher copies them into their selected build.
 Then open src-tauri/tauri.conf.json on line 17 change "http://127.0.0.1:3551/*" to your ip, example "http://163.193.123.283:3551/*"
 Lastly you can run "tauri_test.bat" to test the launcher
 Or you can run "tauri_build.bat" to build the launcher
