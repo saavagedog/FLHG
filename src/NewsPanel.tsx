@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Body, fetch as tauriFetch, ResponseType } from "@tauri-apps/api/http";
-import { ImagePlus, LoaderCircle, Newspaper, RefreshCw, Send, Video, X } from "lucide-react";
+import { ImagePlus, Newspaper, RefreshCw, Send, Video, X } from "lucide-react";
 import { Defaults } from "./defaults";
 
 type NewsUser = {
@@ -133,19 +133,19 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
   };
 
   return (
-    <div className="launcher-enter mx-auto max-w-5xl pb-8">
+    <div className="mx-auto max-w-5xl pb-8">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-white">News</h1>
           <p className="mt-1 text-sm text-slate-400">Announcements and updates from the team</p>
         </div>
         <button type="button" onClick={() => void loadNews()} disabled={loading} title="Refresh news" aria-label="Refresh news" className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-white/10 text-slate-300 transition hover:bg-white/5 disabled:opacity-50">
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          <RefreshCw size={16} />
         </button>
       </div>
 
       {user?.isAdmin && (
-        <form onSubmit={publishNews} className="launcher-enter launcher-surface mb-6 rounded-md p-5 md:p-6">
+        <form onSubmit={publishNews} className="launcher-surface mb-6 rounded-md p-5 md:p-6">
           <div className="mb-5 flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-md bg-[var(--launcher-lime)]/10 text-[var(--launcher-lime)]"><Newspaper size={18} /></div>
             <div>
@@ -170,7 +170,7 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
               <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" className="sr-only" onChange={(event) => handleMediaChange(event.target.files?.[0])} />
             </label>
             <button type="submit" disabled={publishing} className="launcher-play-button inline-flex cursor-pointer items-center gap-2 rounded-md px-4 py-2.5 text-xs font-bold disabled:cursor-wait disabled:opacity-60">
-              {publishing ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}
+              {publishing ? <span>Working...</span> : <Send size={15} />}
               {publishing ? "Publishing..." : "Publish"}
             </button>
           </div>
@@ -181,7 +181,7 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
 
       {loadError && <p role="alert" className="mb-4 rounded-md border border-red-400/20 bg-red-500/10 p-3 text-xs text-red-200">{loadError}</p>}
       {loading && items.length === 0 ? (
-        <div className="launcher-surface grid min-h-52 place-items-center rounded-md text-sm text-slate-400"><LoaderCircle className="animate-spin" size={22} /></div>
+        <div className="launcher-surface grid min-h-52 place-items-center rounded-md text-sm text-slate-400">Loading announcements...</div>
       ) : items.length === 0 ? (
         <div className="launcher-surface flex min-h-52 flex-col items-center justify-center rounded-md px-6 py-12 text-center">
           <Newspaper className="mb-3 text-slate-500" size={24} />
@@ -189,7 +189,7 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
           <p className="mt-1 text-xs text-slate-500">New updates from the team will appear here.</p>
         </div>
       ) : (
-        <div className="launcher-stagger divide-y divide-white/10 border-y border-white/10">
+        <div className="divide-y divide-white/10 border-y border-white/10">
           {items.map((item) => (
             <article key={item.id} className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_260px]">
               <div className="min-w-0">

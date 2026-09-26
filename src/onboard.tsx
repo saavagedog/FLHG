@@ -9,7 +9,6 @@ import { useNavigate } from "react-router-dom";
 import { fetch, ResponseType } from "@tauri-apps/api/http";
 import { Defaults } from "./defaults";
 import NewsPanel from "./NewsPanel";
-import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { appWindow } from "@tauri-apps/api/window";
 import { listen } from '@tauri-apps/api/event';
 import "./launcher.css";
@@ -26,6 +25,8 @@ import {
   CloudDownload,
   Newspaper,
   Download,
+  Server,
+  FolderOpen,
   Eye,
   EyeOff,
   Minus,
@@ -78,7 +79,7 @@ function hasTauriRuntime() {
 
 /* -------------------- Types -------------------- */
 type TabKey = "home" | "library" | "news" | "shop" | "settings" | "leaderboard";
-type BuildItem = { id: string; path: string; name: string; coverDataUrl?: string };
+type BuildItem = { id: string; path: string; name: string; version?: string; versionError?: string; coverDataUrl?: string };
 type BuildDownloadProgress = {
   percent: number;
   downloadedBytes: number;
@@ -120,15 +121,9 @@ function formatBytes(bytes: number | null) {
 }
 
 const TabTransition: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 5 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -5 }}
-    transition={{ duration: 0.15, ease: "linear" }}
-    className="w-full"
-  >
+  <div className="w-full">
     {children}
-  </motion.div>
+  </div>
 );
 
 const NavItem = ({ icon, label, id, active, setActive }: {
@@ -154,13 +149,23 @@ export default function Onboard() {
   const [active, setActive] = useState<TabKey>("home");
   const [path, setPath] = useState<string | null>(null);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isGameRunning, setIsGameRunning] = useState(false);
+  const [isHostRunning, setIsHostRunning] = useState(false);
+  const [isHostStarting, setIsHostStarting] = useState(false);
+  const [hostStatus, setHostStatus] = useState("Host stopped");
+  const [erbiumDllPath, setErbiumDllPath] = useState("");
+  const [isClosingGame, setIsClosingGame] = useState(false);
   const [user, setUser] = useState<UserData | null>(null);
   const [builds, setBuilds] = useState<BuildItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [eor, setEor] = useState(() => localStorage.getItem("gameSetting.eor") === "true");
   const [ror, setRor] = useState(false);
   const [disablePreedits, setDisablePreedits] = useState(false);
-  const [bubbleBuilds, setBubbleBuilds] = useState(false);
+  const [bubbleBuilds, setBubbleBuilds] = useState(() => localStorage.getItem("gameSetting.bubbleBuilds") === "true");
+  const [isApplyingBubbleBuilds, setIsApplyingBubbleBuilds] = useState(false);
+  const [stretchResolutionEnabled, setStretchResolutionEnabled] = useState(() => localStorage.getItem("gameSetting.stretchResolution") === "true");
+  const [resolutionWidth, setResolutionWidth] = useState(() => Number(localStorage.getItem("gameSetting.resolutionWidth")) || 1600);
+  const [resolutionHeight, setResolutionHeight] = useState(() => Number(localStorage.getItem("gameSetting.resolutionHeight")) || 1080);
   const [mobileBuilds, setMobileBuilds] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -191,7 +196,7 @@ export default function Onboard() {
     }
     if (!Defaults.UPDATER_CONFIGURED) {
       setUpdateTrackerStatus("setup");
-      setUpdateTrackerMessage("Create the GitHub repository, then configure its signed release feed to enable updates.");
+      setUpdateTrackerMessage("Automatic updates are disabled for this launcher build.");
       return;
     }
 
@@ -234,7 +239,7 @@ export default function Onboard() {
       void checkForUpdates();
     } else {
       setUpdateTrackerStatus("setup");
-      setUpdateTrackerMessage("Create the GitHub repository, then configure its signed release feed to enable updates.");
+      setUpdateTrackerMessage("Automatic updates are disabled for this launcher build.");
     }
   }, []);
 
@@ -341,7 +346,7 @@ const LeaderboardPanel: React.FC = () => {
   };
 
   return (
-    <div className="launcher-enter max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-5xl mx-auto">
       
       {/* Header Section */}
       <div className="flex items-center justify-between mb-6 px-1">
@@ -362,11 +367,11 @@ const LeaderboardPanel: React.FC = () => {
             </tr>
           </thead>
           
-          <tbody className="launcher-stagger divide-y divide-white/[0.03]">
+          <tbody className="divide-y divide-white/[0.03]">
             {loading ? (
               <tr>
                 <td colSpan={4} className="px-8 py-32 text-center">
-                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <div className="text-sm text-slate-400">Loading leaderboard...</div>
                 </td>
               </tr>
             ) : entries.length === 0 ? (
@@ -451,9 +456,10 @@ const LeaderboardPanel: React.FC = () => {
 };
 
 const ShopPanel: React.FC = () => {
-  const [shopData, setShopData] = useState<{featured: any[], daily: any[]}>({ featured: [], daily: [] });
+  const [shopData, setShopData] = useState<{ featured: any[]; daily: any[] }>({ featured: [], daily: [] });
   const [cosmetics, setCosmetics] = useState<Record<string, CosmeticInfo>>({});
   const [loading, setLoading] = useState(true);
+  const [timeUntilRotation, setTimeUntilRotation] = useState<string>("--:--:--");
 
   useEffect(() => {
   const fetchShop = async () => {
@@ -466,27 +472,41 @@ const ShopPanel: React.FC = () => {
     try {
       const res = await fetch(`${Defaults.BACKEND_URL}/api/launcher/shop`, {
         method: 'GET',
-        responseType: ResponseType.JSON
+        responseType: ResponseType.JSON,
       });
-
       if (!res.ok) throw new Error("Shop fetch failed");
-      
-      const data = res.data as any;
-      setShopData(data);
 
-      const allItems = [...data.featured, ...data.daily];
+      const data = res.data as { featured?: any[]; daily?: any[]; timeUntilRotationMs?: number; timeUntilRotationText?: string };
+      const featured = Array.isArray(data.featured) ? data.featured : [];
+      const daily = Array.isArray(data.daily) ? data.daily : [];
+      setShopData({ featured, daily });
+
+      if (typeof data.timeUntilRotationText === "string") {
+        setTimeUntilRotation(data.timeUntilRotationText);
+      } else if (typeof data.timeUntilRotationMs === "number") {
+        const totalSeconds = Math.max(0, Math.floor(data.timeUntilRotationMs / 1000));
+        const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+        const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        setTimeUntilRotation(`${hours}:${minutes}:${seconds}`);
+      }
+
+      const offers = [...featured, ...daily];
       const cosmeticMap: Record<string, CosmeticInfo> = {};
+      const cosmeticIds: string[] = [...new Set(offers.map((offer) => {
+        const grant = Array.isArray(offer.itemGrants) ? offer.itemGrants[0] : offer.itemGrants;
+        const templateId = typeof grant === "string" ? grant.split(":")[1] : undefined;
+        return templateId ?? "";
+      }).filter((id) => Boolean(id)))];
 
-      // Fetch details for each item from the Fortnite API
-      await Promise.all(allItems.map(async (item) => {
-        const rawId = item.itemGrants[0].split(":")[1];
+      await Promise.all(cosmeticIds.map(async (rawId) => {
         try {
           const apiRes = await fetch(`https://fortnite-api.com/v2/cosmetics/br/${rawId}`, {
-              method: 'GET',
-              responseType: ResponseType.JSON
+            method: "GET",
+            responseType: ResponseType.JSON,
           });
-          
           const apiData = apiRes.data as any;
+
           if (apiRes.ok && apiData.status === 200) {
             cosmeticMap[rawId] = {
               id: apiData.data.id,
@@ -496,8 +516,8 @@ const ShopPanel: React.FC = () => {
               rarity: apiData.data.rarity.value,
             };
           }
-        } catch (e) {
-          console.warn("Failed to fetch info for", rawId);
+        } catch (error) {
+          console.warn("Failed to fetch cosmetic details for", rawId, error);
         }
       }));
 
@@ -529,11 +549,11 @@ const ShopPanel: React.FC = () => {
       <div className="h-[1px] flex-1 bg-gradient-to-r from-white/10 to-transparent" />
     </div>
     
-    <div className="launcher-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
       {items.map((entry) => {
-        const rawId = entry.itemGrants[0].split(":")[1];
-        const info = cosmetics[rawId];
-        const style = getRarityStyle(info?.rarity);
+        const rawId = entry.itemGrants?.[0]?.split(":")[1];
+        const info = rawId ? cosmetics[rawId] : undefined;
+        const style = getRarityStyle(info?.rarity || "");
 
         return (
           <div 
@@ -548,16 +568,18 @@ const ShopPanel: React.FC = () => {
               <img 
                 src={info.image} 
                 onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
-                className="w-full h-full object-cover relative z-0 transition-transform duration-700 ease-out group-hover:scale-110 opacity-0" 
+                className="w-full h-full object-cover relative z-0 opacity-0"
               />
             ) : (
               <div className="w-full h-full bg-[#071422]" />
             )}
             
             {/* Price Badge */}
-            <div className="absolute top-3 right-3 z-30 px-2 py-1.5 rounded-md bg-black/60 backdrop-blur-xl flex items-center gap-2 border border-white/10 shadow-xl transition-transform duration-300 group-hover:scale-105">
-              <img src="https://i.imgur.com/pfmvUEu.png" className="w-3.5 h-3.5" alt="V" />
-              <span className="text-[11px] font-black text-white tracking-tighter uppercase italic">{entry.price}</span>
+            <div className="absolute top-3 right-3 z-30 px-2 py-1.5 rounded-md bg-black/60 backdrop-blur-xl flex items-center gap-2 border border-white/10 shadow-xl">
+              {entry.price !== null && entry.price !== undefined && <>
+                <img src="https://i.imgur.com/pfmvUEu.png" className="w-3.5 h-3.5" alt="V" />
+                <span className="text-[11px] font-black text-white tracking-tighter uppercase italic">{entry.price}</span>
+              </>}
             </div>
           </div>
             <div className="p-3 bg-black/20">
@@ -565,7 +587,7 @@ const ShopPanel: React.FC = () => {
                 {info?.rarity || "Loading..."}
               </div>
               <div className="font-bold text-white text-[11px] truncate uppercase">
-                {info?.name || "..."}
+                {info?.name || rawId || "Cosmetic"}
               </div>
             </div>
           </div>
@@ -580,7 +602,7 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-40 w-full bg-transparent">
-        <div className="w-8 h-8 border-2 border-white/5 border-t-blue-500 rounded-full animate-spin" />
+        <p className="text-sm text-slate-400">Loading shop...</p>
       </div>
     );
   }
@@ -589,6 +611,10 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     <div className="w-full h-full relative bg-transparent outline-none ring-0">
       {!isShopEmpty ? (
         <div className="px-1 pb-10">
+          <div className="mb-6 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+            <span className="font-medium text-slate-200">Next rotation</span>
+            <span className="font-bold tracking-wide text-blue-300">{timeUntilRotation}</span>
+          </div>
           {shopData.featured.length > 0 && RenderSection("Featured", shopData.featured)}
           {shopData.daily.length > 0 && RenderSection("Daily", shopData.daily)}
         </div>
@@ -623,6 +649,7 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
 
   /* -------------------- lifecycle / persistence -------------------- */
   useEffect(() => {
+    let cancelled = false;
     const savedPath = localStorage.getItem("buildPath");
     if (savedPath) setPath(savedPath);
 
@@ -630,6 +657,7 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     if (savedUser) {
       try { setUser(JSON.parse(savedUser)); } catch { /* ignore */ }
     }
+    setErbiumDllPath(localStorage.getItem("erbiumDllPath") || "");
 
     const savedBuilds = localStorage.getItem("SettingsMP.builds");
     if (savedBuilds) {
@@ -637,13 +665,38 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
         const parsed = JSON.parse(savedBuilds) as BuildItem[];
         setBuilds(parsed);
         if (!savedPath && parsed.length > 0) setPath(parsed[0].path);
+        if (hasTauriRuntime()) {
+          void Promise.all(parsed.map(async (build) => {
+            try {
+              const version = await invoke<string>("get_fortnite_version", { gameRoot: build.path });
+              return { ...build, version, versionError: undefined };
+            } catch (versionError) {
+              return { ...build, version: undefined, versionError: String(versionError) };
+            }
+          })).then((checkedBuilds) => {
+            if (cancelled) return;
+            setBuilds(checkedBuilds);
+            localStorage.setItem("SettingsMP.builds", JSON.stringify(checkedBuilds));
+          });
+        }
       } catch { /* ignore */ }
     }
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     localStorage.setItem("gameSetting.eor", String(eor));
   }, [eor]);
+
+  useEffect(() => {
+    localStorage.setItem("gameSetting.bubbleBuilds", String(bubbleBuilds));
+  }, [bubbleBuilds]);
+
+  useEffect(() => {
+    localStorage.setItem("gameSetting.stretchResolution", String(stretchResolutionEnabled));
+    localStorage.setItem("gameSetting.resolutionWidth", String(resolutionWidth));
+    localStorage.setItem("gameSetting.resolutionHeight", String(resolutionHeight));
+  }, [stretchResolutionEnabled, resolutionWidth, resolutionHeight]);
 
   useEffect(() => {
     localStorage.setItem("SettingsMP.builds", JSON.stringify(builds));
@@ -653,27 +706,59 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     if (path) localStorage.setItem("buildPath", path); else localStorage.removeItem("buildPath");
   }, [path]);
 
-  /* -------------------- launcher polling -------------------- */
+  /* -------------------- Fortnite process polling -------------------- */
   useEffect(() => {
     let cancelled = false;
-    let t: number | null = null;
+    let requestInFlight = false;
     const run = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
       try {
-        const r = await invoke("is_fortnite_client_running");
-        if (!cancelled && r === false) setIsLaunching(false);
+        const running = await invoke<boolean>("is_fortnite_client_running");
+        const hostRunning = await invoke<boolean>("is_erbium_host_running");
+        if (!cancelled) {
+          setIsGameRunning(running);
+          setIsHostRunning(hostRunning);
+          if (running) setIsLaunching(false);
+        }
       } catch {
-        if (!cancelled) setIsLaunching(false);
+        if (!cancelled && !hasTauriRuntime()) setIsGameRunning(false);
+      } finally {
+        requestInFlight = false;
       }
     };
-    if (isLaunching) {
-      run();
-      t = window.setInterval(run, 3000);
-    }
+    void run();
+    const timer = window.setInterval(() => void run(), 1500);
     return () => {
       cancelled = true;
-      if (t) window.clearInterval(t);
+      window.clearInterval(timer);
     };
-  }, [isLaunching]);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let unlistenStatus: (() => void) | undefined;
+    let unlistenError: (() => void) | undefined;
+
+    void listen<string>("host-status", (event) => setHostStatus(event.payload)).then((unlisten) => {
+      if (active) unlistenStatus = unlisten;
+      else unlisten();
+    });
+    void listen<string>("host-error", (event) => {
+      setHostStatus("Host stopped");
+      setError(event.payload);
+      setTimeout(() => setError(null), 8000);
+    }).then((unlisten) => {
+      if (active) unlistenError = unlisten;
+      else unlisten();
+    });
+
+    return () => {
+      active = false;
+      unlistenStatus?.();
+      unlistenError?.();
+    };
+  }, []);
 
   /* -------------------- actions -------------------- */
   const requireDesktopRuntime = () => {
@@ -683,8 +768,34 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     return false;
   };
 
+  const handleBubbleBuildsToggle = async (enabled: boolean) => {
+    if (!requireDesktopRuntime()) return;
+    const gameRoots = [...new Set([...builds.map((build) => build.path), ...(path ? [path] : [])])];
+    if (gameRoots.length === 0) {
+      setError("Add or select a Fortnite build before changing Bubble Builds.");
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    setIsApplyingBubbleBuilds(true);
+    try {
+      await invoke("set_bubble_builds_cmd", { gameRoots, enabled });
+      setBubbleBuilds(enabled);
+    } catch (toggleError) {
+      setError(`Could not ${enabled ? "install" : "remove"} Bubble Builds: ${String(toggleError)}`);
+      setTimeout(() => setError(null), 7000);
+    } finally {
+      setIsApplyingBubbleBuilds(false);
+    }
+  };
+
   const handleLaunch = async () => {
     if (!requireDesktopRuntime()) return;
+    if (isHostRunning) {
+      setError("Stop the Erbium host before launching a player session.");
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
     setIsLaunching(true);
     const launchPath = path || builds[0]?.path;
     if (!launchPath) {
@@ -701,18 +812,106 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     }
 
     try {
+    await invoke("set_bubble_builds_cmd", { gameRoots: [launchPath], enabled: bubbleBuilds });
     await invoke("firstlaunch", {
       path: launchPath,
       email: user.email,
       password: user.password,
       eor: eor,
       disablePreedits: disablePreedits,
+      stretchResolutionEnabled,
+      resolutionWidth,
+      resolutionHeight,
     });
   } catch (err) {
     setError("Fehler beim Start: " + String(err));
     setIsLaunching(false);
+  } finally {
+    if (!isGameRunning) setIsLaunching(false);
   }
-};
+  };
+
+  const selectErbiumDll = async () => {
+    if (!requireDesktopRuntime()) return null;
+    const selected = await open({
+      multiple: false,
+      title: "Select the built Erbium.dll",
+      filters: [{ name: "Erbium DLL", extensions: ["dll"] }],
+    });
+    if (typeof selected !== "string") return null;
+    setErbiumDllPath(selected);
+    localStorage.setItem("erbiumDllPath", selected);
+    return selected;
+  };
+
+  const handleErbiumHost = async () => {
+    if (!requireDesktopRuntime()) return;
+    if (user?.isAdmin !== true) {
+      setError("Only launcher admins can start the Erbium host.");
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+    if (isHostRunning) {
+      try {
+        await invoke("stop_erbium_host");
+        setHostStatus("Stopping host...");
+      } catch (stopError) {
+        setError("Could not stop Erbium host: " + String(stopError));
+        setTimeout(() => setError(null), 6000);
+      }
+      return;
+    }
+    if (!user?.email || !user.password) {
+      setError("Sign in with a game account before starting the host.");
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    const gameRoot = path || builds[0]?.path;
+    if (!gameRoot) {
+      setError("Add or select the Fortnite 13.40 build first.");
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    let dllPath = erbiumDllPath;
+    if (!dllPath) {
+      const selected = await selectErbiumDll();
+      if (!selected) return;
+      dllPath = selected;
+    }
+
+    setIsHostStarting(true);
+    setHostStatus("Preparing Erbium host...");
+    try {
+      await invoke("start_erbium_host", {
+        gameRoot,
+        email: user.email,
+        password: user.password,
+        erbiumDllPath: dllPath,
+      });
+      setIsHostRunning(true);
+    } catch (hostError) {
+      setHostStatus("Host stopped");
+      setError("Could not start Erbium host: " + String(hostError));
+      setTimeout(() => setError(null), 8000);
+    } finally {
+      setIsHostStarting(false);
+    }
+  };
+
+  const handleCloseGame = async () => {
+    if (!requireDesktopRuntime()) return;
+    setIsClosingGame(true);
+    try {
+      await invoke("close_fortnite_client");
+    } catch (closeError) {
+      setError(`Could not close Fortnite: ${String(closeError)}`);
+      setTimeout(() => setError(null), 7000);
+    } finally {
+      setIsClosingGame(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.clear();
@@ -738,6 +937,8 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
         setTimeout(() => setError(null), 5000);
         return;
       }
+      let gameVersion: string | undefined;
+      try { gameVersion = await invoke<string>("get_fortnite_version", { gameRoot: selected }); } catch { /* Version display is optional. */ }
       if (builds.length >= 2) {
         setError("Maximum builds in library reached (2). Remove one first.");
         setTimeout(() => setError(null), 5000);
@@ -758,6 +959,7 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
         id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
         path: selected,
         name: getFolderName(selected),
+        version: gameVersion,
         coverDataUrl,
       };
       const updatedBuilds = [item, ...builds];
@@ -767,13 +969,15 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
     } catch (e) {
       setError("Could not add build: " + String(e));
       setTimeout(() => setError(null), 5000);
+      return;
     }
-    const pakUrls = Defaults.PAKS_AND_SIGS_LINKS || "";
-      try {
-        await invoke("download_paks_cmd", { gameRoot: selected, urls: pakUrls });
-      } catch (err) {
-        console.error("Auto-sync failed:", err);
-      }
+    try {
+      await invoke("sync_paks_cmd", { gameRoot: selected });
+    } catch (err) {
+      console.error("Could not sync local PAK files:", err);
+      setError("Could not copy PAK/SIG files from Documents\\Project Fishk\\Paks: " + String(err));
+      setTimeout(() => setError(null), 6000);
+    }
   };
 
   const downloadBuild = async () => {
@@ -804,6 +1008,8 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
       setWarningMsg("");
 
       const installedPath = await invoke<string>("download_build_cmd", { destination });
+      let gameVersion: string | undefined;
+      try { gameVersion = await invoke<string>("get_fortnite_version", { gameRoot: installedPath }); } catch { /* Version display is optional. */ }
       const splashPath = await join(installedPath, "FortniteGame", "Content", "Splash", "Splash.bmp");
       let coverDataUrl: string | undefined;
       if (await exists(splashPath)) {
@@ -814,6 +1020,7 @@ const isShopEmpty = shopData.featured.length === 0 && shopData.daily.length === 
         id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
         path: installedPath,
         name: getFolderName(installedPath),
+        version: gameVersion,
         coverDataUrl,
       };
       const updatedBuilds = [item, ...builds];
@@ -937,7 +1144,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
   const bannerImage = current?.coverDataUrl || Defaults.PLACEHOLDER_IMAGE;
 
   return (
-      <div className="launcher-enter mb-8 animate-in fade-in duration-700">
+      <div className="mb-8">
         {/* MAIN BANNER */}
         <div className="launcher-hero relative rounded-md overflow-hidden border border-white/10 transition-all">
           {/* Background Image with Smoother Gradient Overlay */}
@@ -947,7 +1154,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
                 key={bannerImage}
                 src={bannerImage}
                 alt={current ? `${current.name} game artwork` : `${Defaults.LAUNCHER_NAME} featured artwork`}
-                className="launcher-hero-image w-full h-full object-cover animate-in fade-in duration-500"
+                className="launcher-hero-image w-full h-full object-cover"
               />
             ) : (
               <video
@@ -962,7 +1169,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
                 aria-hidden="true"
                 onError={() => setHeroVideoUnavailable(true)}
                 onCanPlay={() => setHeroVideoUnavailable(false)}
-                className="launcher-hero-image w-full h-full object-cover animate-in fade-in duration-500"
+                className="launcher-hero-image w-full h-full object-cover"
               />
             )}
             <div className="absolute inset-0 bg-gradient-to-r from-[#080b0e]/95 via-[#080b0e]/55 to-transparent" />
@@ -986,15 +1193,26 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
               </p>
 
               <div className="mt-6 flex items-center gap-3">
-                <motion.button 
-                  onClick={() => current ? handleLaunch() : downloadBuild()} 
-                  whileTap={{ scale: 0.97 }} 
-                  disabled={isLaunching || (Boolean(current) && !user)} 
+                <button
+                  onClick={() => current ? (isGameRunning ? handleCloseGame() : handleLaunch()) : downloadBuild()}
+                  disabled={isLaunching || isClosingGame || isHostRunning || (Boolean(current) && !user && !isGameRunning)}
                   className="launcher-play-button cursor-pointer px-7 py-3 rounded-md font-bold text-sm uppercase tracking-wide transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {current ? <Play size={17} fill="currentColor" /> : <Download size={18} />}
-                  {isLaunching ? "Launching..." : current ? "Play now" : "Download build"}
-                </motion.button>
+                  {current ? (isHostRunning ? <Server size={17} /> : isGameRunning ? <X size={17} /> : <Play size={17} fill="currentColor" />) : <Download size={18} />}
+                  {isHostRunning ? "Host running" : isClosingGame ? "Closing..." : isGameRunning ? "Close" : isLaunching ? "Running..." : current ? "Play now" : "Download build"}
+                </button>
+
+                {user?.isAdmin === true && (
+                  <button
+                    type="button"
+                    onClick={() => void handleErbiumHost()}
+                    disabled={isHostStarting || isLaunching || isClosingGame}
+                    className="cursor-pointer inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Server size={17} />
+                    {isHostStarting ? "Starting host..." : isHostRunning ? "Stop host" : "Start Erbium host"}
+                  </button>
+                )}
 
                 <button 
                   onClick={() => setActive("library")} 
@@ -1003,6 +1221,18 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
                   Browse library
                 </button>
               </div>
+              {user?.isAdmin === true && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                  <button
+                    type="button"
+                    onClick={() => void selectErbiumDll()}
+                    className="cursor-pointer underline decoration-white/25 underline-offset-4 hover:text-white"
+                  >
+                    {erbiumDllPath ? "Change Erbium DLL" : "Select Erbium.dll"}
+                  </button>
+                  <span aria-live="polite">{hostStatus}</span>
+                </div>
+              )}
             </div>
 
             {/* Status Card (Right Side) */}
@@ -1042,7 +1272,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
 
   /* Library styled like Epic store grid */
   const LibraryPanel: React.FC = () => (
-  <div className="launcher-enter animate-in fade-in duration-500">
+  <div>
     <div className="flex items-center justify-between mb-6 px-1">
       <div>
         <div className="text-2xl font-bold text-white">Library</div>
@@ -1051,7 +1281,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
     </div>
 
     {/* Grid Section */}
-    <div className="launcher-stagger grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
       {builds.length === 0 && (
         <div className="launcher-download-feature col-span-full min-h-[260px] grid grid-cols-1 md:grid-cols-[1.15fr_1fr] overflow-hidden rounded-md border border-white/10">
           <div className="relative min-h-48 overflow-hidden bg-black/30">
@@ -1086,7 +1316,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
                   setPath(b.path);
                 }
               }}
-              className={`group relative cursor-pointer rounded-lg overflow-hidden bg-[#0b1724]/60 border backdrop-blur-md transition-all duration-300 transform-gpu hover:-translate-y-1 ${
+              className={`group relative cursor-pointer rounded-lg overflow-hidden bg-[#0b1724]/60 border backdrop-blur-md ${
                 selected ? "border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.15)]" : "border-white/10 shadow-xl shadow-black/40"
               }`}
             >
@@ -1096,7 +1326,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
                   <img 
                     src={b.coverDataUrl} 
                     alt={b.name} 
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-700 uppercase tracking-tighter">No Cover</div>
@@ -1113,6 +1343,9 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
                 </div>
                 <div className="text-[10px] text-slate-500 font-bold mt-1 truncate uppercase tracking-widest opacity-80">
                   {getFolderName(b.path)}
+                </div>
+                <div className="mt-2 text-[10px] font-semibold text-slate-400">
+                  {b.version ? `Fortnite ${b.version} detected` : b.versionError ? "Version detection unavailable" : "Detecting game version..."}
                 </div>
                 
                 <div className="mt-4 flex items-center justify-between">
@@ -1146,18 +1379,23 @@ const SettingsPanel: React.FC<{
   disablePreedits: boolean;
   setDisablePreedits: (v: boolean) => void;
   bubbleBuilds: boolean; setBubbleBuilds: (v: boolean) => void;
+  isApplyingBubbleBuilds: boolean;
+  stretchResolutionEnabled: boolean; setStretchResolutionEnabled: (v: boolean) => void;
+  resolutionWidth: number; setResolutionWidth: (v: number) => void;
+  resolutionHeight: number; setResolutionHeight: (v: number) => void;
   mobileBuilds: boolean; setMobileBuilds: (v: boolean) => void;
   accentColor: string; setAccentColor: (color: string) => void;
   theme: LauncherTheme; onSelectTheme: (theme: LauncherTheme) => void;
   updateTrackerStatus: UpdateTrackerStatus;
   updateTrackerMessage: string;
   updateManifest: UpdateManifest | null;
+  onOpenPakFolder: () => void;
   onCheckForUpdates: () => void;
   onInstallAvailableUpdate: () => void;
-}> = ({ eor, setEor, ror, setRor, bubbleBuilds, setBubbleBuilds, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, theme, onSelectTheme, updateTrackerStatus, updateTrackerMessage, updateManifest, onCheckForUpdates, onInstallAvailableUpdate }) => {
+}> = ({ eor, setEor, ror, setRor, bubbleBuilds, setBubbleBuilds, isApplyingBubbleBuilds, stretchResolutionEnabled, setStretchResolutionEnabled, resolutionWidth, setResolutionWidth, resolutionHeight, setResolutionHeight, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, theme, onSelectTheme, updateTrackerStatus, updateTrackerMessage, updateManifest, onOpenPakFolder, onCheckForUpdates, onInstallAvailableUpdate }) => {
 
   return (
-    <div className="launcher-enter max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="max-w-5xl mx-auto">
       
       {/* HEADER SECTION */}
       <div className="flex items-center justify-between mb-8 px-1">
@@ -1167,10 +1405,11 @@ const SettingsPanel: React.FC<{
         </div>
       </div>
 
-      <div className="launcher-stagger grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
         
         {/* GAMEPLAY MECHANICS CARD */}
         <div className="p-10 rounded-2xl border-2 border-white/10 bg-[#0b1724]/60 backdrop-blur-xl shadow-2xl transition-all hover:bg-[#0b1724]/80 flex flex-col justify-between">
+          <h3 className="mb-5 text-xs font-black uppercase tracking-[0.18em] text-blue-300">Gameplay</h3>
           <div className="flex items-center justify-between group">
             <div>
               <p className="text-sm font-black text-slate-200 group-hover:text-white transition-colors uppercase italic tracking-tighter">Edit on Release</p>
@@ -1220,6 +1459,64 @@ const SettingsPanel: React.FC<{
           </div>
           <div className="pt-6" /> 
         </div>
+        <div className="p-8 rounded-2xl border-2 border-white/10 bg-[#0b1724]/60 backdrop-blur-xl shadow-2xl transition-all hover:bg-[#0b1724]/80">
+          <div className="mb-6">
+            <h3 className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">Display</h3>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Resolution</p>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-black uppercase italic tracking-tighter text-slate-200">Stretch resolution</p>
+              <p className="mt-0.5 text-xs text-slate-500">Applies when Fortnite launches</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-label="Stretch resolution"
+              aria-checked={stretchResolutionEnabled}
+              onClick={() => setStretchResolutionEnabled(!stretchResolutionEnabled)}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-all ${stretchResolutionEnabled ? "bg-cyan-500" : "bg-white/10"}`}
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform ${stretchResolutionEnabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+          <div className={`mt-6 grid grid-cols-2 gap-3 ${stretchResolutionEnabled ? "" : "opacity-45"}`}>
+            <label className="text-xs font-semibold text-slate-400">
+              Width
+              <input
+                type="number"
+                min={640}
+                max={7680}
+                step={10}
+                value={resolutionWidth}
+                disabled={!stretchResolutionEnabled}
+                onChange={(event) => setResolutionWidth(Math.max(640, Math.min(7680, Number(event.target.value) || 1600)))}
+                className="mt-2 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/60 disabled:cursor-not-allowed"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-400">
+              Height
+              <input
+                type="number"
+                min={480}
+                max={4320}
+                step={10}
+                value={resolutionHeight}
+                disabled={!stretchResolutionEnabled}
+                onChange={(event) => setResolutionHeight(Math.max(480, Math.min(4320, Number(event.target.value) || 1080)))}
+                className="mt-2 w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/60 disabled:cursor-not-allowed"
+              />
+            </label>
+          </div>
+          <div className="mt-5 flex min-h-28 items-center justify-center rounded-md border border-white/10 bg-black/25 p-3">
+            <div
+              className="flex max-h-24 max-w-full items-center justify-center border border-cyan-300/50 bg-cyan-300/10 px-3 text-center text-xs font-semibold text-cyan-100"
+              style={{ aspectRatio: `${resolutionWidth} / ${resolutionHeight}`, width: `${Math.min(100, (resolutionWidth / resolutionHeight) * 56)}%` }}
+            >
+              {resolutionWidth} x {resolutionHeight}
+            </div>
+          </div>
+        </div>
         {/* RIGHT COLUMN */}
         <div className="flex flex-col gap-6">
           <div className="p-8 rounded-2xl border-2 border-white/10 bg-[#0b1724]/60 backdrop-blur-xl shadow-2xl transition-all hover:bg-[#0b1724]/80">
@@ -1237,12 +1534,15 @@ const SettingsPanel: React.FC<{
               <div className="flex items-center justify-between group">
                 <div>
                   <p className="text-sm font-black text-slate-200 group-hover:text-white transition-colors uppercase italic tracking-tighter">Bubble Builds</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">IN DEVELOPMENT Bubble Style</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Installs or removes the Bubble pack</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setBubbleBuilds(!bubbleBuilds)}
-                  className={`cursor-pointer relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 ${bubbleBuilds ? "bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]" : "bg-white/10"}`}
+                  role="switch"
+                  aria-checked={bubbleBuilds}
+                  disabled={isApplyingBubbleBuilds}
+                  onClick={() => void setBubbleBuilds(!bubbleBuilds)}
+                  className={`cursor-pointer relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300 disabled:cursor-wait disabled:opacity-60 ${bubbleBuilds ? "bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)]" : "bg-white/10"}`}
                 >
                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${bubbleBuilds ? "translate-x-6" : "translate-x-1"}`} />
                 </button>
@@ -1304,10 +1604,25 @@ const SettingsPanel: React.FC<{
 
         <div className="launcher-surface md:col-span-2 flex flex-wrap items-center justify-between gap-6 rounded-md p-6">
           <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-white">Local PAK / SIG files</h3>
+            <p className="mt-2 text-xs text-slate-400">Place files in Documents/Project Fishk/Paks. New files are copied into game builds when added or launched.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenPakFolder}
+            className="launcher-play-button flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-4 py-2 text-xs font-bold"
+          >
+            <FolderOpen size={15} />
+            Open PAK folder
+          </button>
+        </div>
+
+        <div className="launcher-surface md:col-span-2 flex flex-wrap items-center justify-between gap-6 rounded-md p-6">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-white">Software updates</h3>
               <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${updateTrackerStatus === "available" ? "bg-emerald-400/15 text-emerald-200" : updateTrackerStatus === "error" ? "bg-amber-400/15 text-amber-200" : "bg-white/10 text-slate-300"}`}>
-                {updateTrackerStatus === "available" ? "Update available" : updateTrackerStatus === "checking" ? "Checking" : updateTrackerStatus === "installing" ? "Installing" : updateTrackerStatus === "current" ? "Up to date" : updateTrackerStatus === "browser" ? "Desktop app required" : "Setup needed"}
+                {updateTrackerStatus === "available" ? "Update available" : updateTrackerStatus === "checking" ? "Checking" : updateTrackerStatus === "installing" ? "Installing" : updateTrackerStatus === "current" ? "Up to date" : updateTrackerStatus === "browser" ? "Desktop app required" : "Updates disabled"}
               </span>
             </div>
             <p className="mt-2 text-xs text-slate-400">{updateTrackerMessage}</p>
@@ -1388,7 +1703,6 @@ const SettingsPanel: React.FC<{
 
 /* -------------------- Render main layout -------------------- */
   return (
-  <MotionConfig reducedMotion="user">
   <div className="launcher-app w-screen h-screen flex text-slate-100 relative overflow-hidden rounded-xl border border-white/10" data-theme={theme} style={{ "--launcher-lime": accentColor } as React.CSSProperties}>
 
     {CustomTitleBar()}
@@ -1400,23 +1714,16 @@ const SettingsPanel: React.FC<{
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Pass user to TopBar */}
-        <AnimatePresence>
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, y: -8 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              exit={{ opacity: 0, y: -8 }} 
-              className="absolute right-6 top-6 z-50"
-            >
-              <div className="bg-red-600/90 text-white px-4 py-2 rounded-md shadow-lg border border-red-500/50">
-                {error}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {error && (
+          <div className="absolute right-6 top-6 z-50">
+            <div className="bg-red-600/90 text-white px-4 py-2 rounded-md shadow-lg border border-red-500/50">
+              {error}
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-auto p-4 md:p-5 custom-scrollbar">
-  <AnimatePresence mode="wait">
+  <div>
     {active === "home" && (
       <TabTransition key="home">
         {HeroBanner({})}
@@ -1435,7 +1742,7 @@ const SettingsPanel: React.FC<{
                 <button onClick={() => setActive("library")} className="launcher-accent-text cursor-pointer shrink-0 text-xs font-semibold hover:text-white transition-colors">Manage library <span aria-hidden="true">→</span></button>
               </div>
 
-              <div className="launcher-stagger grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1">
                 {builds.length === 0 ? (
                   <div className="min-h-28 col-span-full flex flex-col items-center justify-center rounded-md border border-dashed border-white/15 text-center">
                     <p className="text-sm font-medium text-slate-300">No builds installed yet</p>
@@ -1443,7 +1750,7 @@ const SettingsPanel: React.FC<{
                   </div>
                 ) : (
                   builds.slice(0, 4).map(b => (
-                    <motion.div 
+                    <div
                       key={b.id} 
                       role="button"
                       tabIndex={0}
@@ -1455,11 +1762,6 @@ const SettingsPanel: React.FC<{
                           setPath(b.path);
                         }
                       }}
-                      whileHover={{ 
-                        y: -4, 
-                        /* duration: 0.3 with easeOut creates a premium gliding feel */
-                        transition: { duration: 0.3, ease: "easeOut" } 
-                      }}
                       className={`group relative rounded-md overflow-hidden border flex h-24 cursor-pointer transition-all duration-300 ease-out ${b.path === path ? "border-white/30" : "border-white/10 bg-black/20 hover:border-white/25"}`}
                       style={b.path === path ? { borderColor: accentColor, backgroundColor: `${accentColor}10` } : undefined}
                     >
@@ -1469,7 +1771,7 @@ const SettingsPanel: React.FC<{
                           <img 
                             src={b.coverDataUrl} 
                             alt={b.name} 
-                            className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" 
+                            className="w-full h-full object-cover"
                           />
                         ) : (
                           <div className="w-full h-full grid place-items-center text-slate-700">
@@ -1502,7 +1804,7 @@ const SettingsPanel: React.FC<{
                       
                       {/* Left Side Accent - Smoothly slides into view from top to bottom */}
                       <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#0ea5e9] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    </motion.div>
+                    </div>
                         ))
                       )}
                     </div>
@@ -1534,7 +1836,11 @@ const SettingsPanel: React.FC<{
                 {SettingsPanel({
                   eor, setEor, ror, setRor,
                   disablePreedits, setDisablePreedits,
-                  bubbleBuilds, setBubbleBuilds,
+                  bubbleBuilds, setBubbleBuilds: handleBubbleBuildsToggle,
+                  isApplyingBubbleBuilds,
+                  stretchResolutionEnabled, setStretchResolutionEnabled,
+                  resolutionWidth, setResolutionWidth,
+                  resolutionHeight, setResolutionHeight,
                   mobileBuilds, setMobileBuilds,
                   accentColor,
                   theme,
@@ -1546,6 +1852,14 @@ const SettingsPanel: React.FC<{
                   updateTrackerStatus,
                   updateTrackerMessage,
                   updateManifest,
+                  onOpenPakFolder: async () => {
+                    try {
+                      await invoke("open_pak_drop_folder_cmd");
+                    } catch (folderError) {
+                      setError("Could not open the PAK folder: " + String(folderError));
+                      setTimeout(() => setError(null), 5000);
+                    }
+                  },
                   onCheckForUpdates: checkForUpdates,
                   onInstallAvailableUpdate: installAvailableUpdate,
                 })}
@@ -1557,15 +1871,12 @@ const SettingsPanel: React.FC<{
                 <LeaderboardPanelView />
               </TabTransition>
             )}
-          </AnimatePresence>
-          <AnimatePresence>
+          </div>
             {isDownloading && (
-              <motion.div 
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              <div
                 className="fixed inset-0 z-[999] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
               >
-                <motion.div 
-                  initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
+                <div
                   className={`grid w-full max-w-[760px] overflow-hidden rounded-lg border bg-[#101820] text-left shadow-2xl transition-colors duration-300 md:grid-cols-[260px_minmax(0,1fr)] ${warningMsg ? "border-red-500 shadow-red-500/20" : "border-white/10"}`}
                 >
                   <div className="relative min-h-36 overflow-hidden bg-black/40 md:min-h-[340px]">
@@ -1598,10 +1909,9 @@ const SettingsPanel: React.FC<{
                       aria-valuemax={100}
                       aria-valuenow={Math.max(0, Math.min(progress, 100))}
                     >
-                      <motion.div
+                      <div
                         className={`h-full rounded-full ${warningMsg ? "bg-red-500" : "bg-[var(--launcher-lime)]"}`}
-                        animate={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
-                        transition={{ duration: 0.2 }}
+                        style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
                       />
                     </div>
 
@@ -1617,30 +1927,23 @@ const SettingsPanel: React.FC<{
                         {showDownloadDetails ? <EyeOff size={17} /> : <Eye size={17} />}
                       </button>
                     </div>
-                    <AnimatePresence initial={false}>
                       {showDownloadDetails && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
+                        <div
                           className="grid grid-cols-2 gap-x-5 gap-y-4 overflow-hidden pt-2"
                         >
                           <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Speed</div><div className="mt-1 text-sm font-semibold text-white">{downloadRate > 0 ? formatTransferRate(downloadRate) : "Calculating"}</div></div>
                           <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Network rate</div><div className="mt-1 text-sm font-semibold text-white">{downloadRate > 0 ? `${(downloadRate * 8 / 1_000_000).toFixed(1)} Mbps` : "Calculating"}</div></div>
                           <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Downloaded</div><div className="mt-1 text-sm font-semibold text-white">{formatBytes(downloadedBytes)} / {formatBytes(downloadTotalBytes)}</div></div>
                           <div><div className="text-[10px] uppercase tracking-wider text-slate-500">Time remaining</div><div className="mt-1 text-sm font-semibold text-white">{progress >= 100 ? "Finishing up" : formatEta(downloadEta)}</div></div>
-                        </motion.div>
+                        </div>
                       )}
-                    </AnimatePresence>
                   </div>
-                </motion.div>
-              </motion.div>
+                </div>
+              </div>
             )}
-          </AnimatePresence>
         </div>
       </div>
     </div>
   </div>
-  </MotionConfig>
 );
 }

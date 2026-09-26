@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Project Fishk",
-    "version": "1.0.28"
+    "version": "1.0.37"
   },
   "tauri": {
     "updater": {
@@ -22,7 +22,7 @@
       "http": {
         "all": true,
         "request": true,
-        "scope": ["http://26.30.86.1:3551/*", "http://localhost:3551/*", "http://localhost:3552/*", "http://127.0.0.1:3552/*", "https://fortnite-api.com/*"]
+        "scope": ["http://26.30.86.1:3551/*", "http://26.30.86.1:3552/*", "http://localhost:3551/*", "http://localhost:3552/*", "http://127.0.0.1:3552/*", "https://fortnite-api.com/*"]
       },
       "shell": {
         "all": true,

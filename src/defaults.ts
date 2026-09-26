@@ -8,7 +8,6 @@ export type DefaultsType = {
   LAUNCHER_VERSION: string;
   ENABLE_API: boolean;
   UPDATER_CONFIGURED: boolean;
-  PAKS_AND_SIGS_LINKS: string;
 };
 
 const env = import.meta.env;
@@ -22,8 +21,7 @@ export const Defaults: DefaultsType = {
   PLACEHOLDER_IMAGE: env.VITE_PLACEHOLDER_IMAGE || "/Images/build-placeholder.webp",
   LAUNCHER_VERSION: env.VITE_LAUNCHER_VERSION || "1.0.0",
   ENABLE_API: env.VITE_ENABLE_API === "true",
-  UPDATER_CONFIGURED: env.VITE_UPDATER_CONFIGURED === "true",
-  PAKS_AND_SIGS_LINKS: env.VITE_PAKS_AND_SIGS_LINKS || ""
+  UPDATER_CONFIGURED: env.VITE_UPDATER_CONFIGURED === "true"
 };
 
 export const LibraryConfig = {

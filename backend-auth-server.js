@@ -10,6 +10,7 @@ app.use(express.json({ limit: "70mb" }));
 
 const mongoUri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/FISHKY";
 const port = Number(process.env.PORT || 3552);
+const reloadBackendUrl = (process.env.RELOAD_BACKEND_URL || "http://127.0.0.1:3551").replace(/\/+$/, "");
 const mediaDirectory = path.resolve(process.env.NEWS_MEDIA_DIRECTORY || path.join(process.cwd(), "data", "news-media"));
 const adminEmails = new Set((process.env.ADMIN_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
 const allowedMediaTypes = new Map([
@@ -51,6 +52,46 @@ app.use("/news-media", express.static(mediaDirectory, { dotfiles: "deny", maxAge
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, mongo: mongoose.connection.readyState === 1, port });
+});
+
+app.get("/api/launcher/shop", async (_req, res) => {
+  try {
+    const response = await fetch(`${reloadBackendUrl}/fortnite/api/storefront/v2/catalog`, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "FishkyLauncher/1.0",
+      },
+    });
+    if (!response.ok) {
+      return res.status(502).json({ message: `Reload Backend returned HTTP ${response.status} for its storefront.` });
+    }
+
+    const payload = await response.json();
+    const storefronts = payload?.storefronts;
+    if (!Array.isArray(storefronts)) {
+      return res.status(502).json({ message: "Reload Backend returned an invalid storefront catalog." });
+    }
+
+    const getOffers = (storefrontName) => {
+      const storefront = storefronts.find((entry) => entry.name === storefrontName);
+      if (!Array.isArray(storefront?.catalogEntries)) return [];
+      return storefront.catalogEntries
+        .filter((entry) => Array.isArray(entry.itemGrants) && entry.itemGrants.length > 0)
+        .map((entry) => ({
+          id: entry.offerId || entry.devName,
+          itemGrants: entry.itemGrants.map((grant) => grant.templateId),
+          price: entry.prices?.[0]?.finalPrice ?? null,
+        }));
+    };
+
+    return res.json({
+      featured: getOffers("BRWeeklyStorefront"),
+      daily: getOffers("BRDailyStorefront"),
+    });
+  } catch (err) {
+    console.error("Reload storefront proxy failed:", err.message);
+    return res.status(502).json({ message: "Could not fetch the Reload Backend item shop." });
+  }
 });
 
 app.post("/api/auth/login", async (req, res) => {

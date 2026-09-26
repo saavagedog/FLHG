@@ -3,6 +3,7 @@ use winapi::um::processthreadsapi::{CreateRemoteThread, OpenProcess};
 use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE, PROCESS_ALL_ACCESS};
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
 use std::time::{Duration};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::os::windows::process::CommandExt;
 use tauri::{AppHandle};
 use winapi::shared::minwindef::FALSE;
@@ -18,6 +19,137 @@ use winapi::um::winnt::HANDLE;
 use winapi::um::winnt::THREAD_SUSPEND_RESUME;
 
 use sysinfo::System;
+
+static PLAYER_GAME_PID: AtomicU32 = AtomicU32::new(0);
+
+pub fn is_player_client_running() -> bool {
+    let pid = PLAYER_GAME_PID.load(Ordering::SeqCst);
+    if pid == 0 {
+        return false;
+    }
+
+    let mut system = System::new_all();
+    system.refresh_all();
+    system.processes().keys().any(|process_id| process_id.as_u32() == pid)
+}
+
+pub fn close_player_client() -> Result<(), String> {
+    let pid = PLAYER_GAME_PID.load(Ordering::SeqCst);
+    if pid == 0 {
+        return Err("No player game launched by this launcher is running.".to_string());
+    }
+
+    let mut system = System::new_all();
+    system.refresh_all();
+    let process = system.processes().iter().find_map(|(process_id, process)| {
+        (process_id.as_u32() == pid).then_some(process)
+    });
+
+    match process {
+        Some(process) if process.kill() => {
+            PLAYER_GAME_PID.store(0, Ordering::SeqCst);
+            Ok(())
+        }
+        _ => {
+            PLAYER_GAME_PID.store(0, Ordering::SeqCst);
+            Err("The player game process is no longer running.".to_string())
+        }
+    }
+}
+
+fn release_version_from_branch(branch: &str) -> Option<String> {
+    let (_, suffix) = branch.split_once("Release-")?;
+    let version: String = suffix
+        .chars()
+        .take_while(|character| character.is_ascii_digit() || *character == '.')
+        .collect();
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    if !major.is_empty()
+        && !minor.is_empty()
+        && major.chars().all(|character| character.is_ascii_digit())
+        && minor.chars().all(|character| character.is_ascii_digit())
+        && parts.next().is_none()
+    {
+        Some(version)
+    } else {
+        None
+    }
+}
+
+pub fn detect_fortnite_version(game_root: &str) -> Result<String, String> {
+    let root = std::path::Path::new(game_root);
+    for relative_path in ["FortniteGame/Build/Build.version", "Engine/Build/Build.version"] {
+        let manifest_path = root.join(relative_path);
+        let contents = match std::fs::read_to_string(&manifest_path) {
+            Ok(contents) => contents,
+            Err(_) => continue,
+        };
+        let manifest: serde_json::Value = serde_json::from_str(&contents)
+            .map_err(|_| format!("Could not read build metadata at {}.", manifest_path.display()))?;
+        let Some(branch) = manifest.get("BranchName").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Some(version) = release_version_from_branch(branch) else {
+            continue;
+        };
+        return Ok(version);
+    }
+
+    Err("Could not detect the Fortnite version from Build.version metadata.".to_string())
+}
+
+#[tauri::command]
+pub fn get_fortnite_version(game_root: String) -> Result<String, String> {
+    detect_fortnite_version(&game_root)
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::{detect_fortnite_version, release_version_from_branch};
+    use std::path::PathBuf;
+
+    fn make_game_root(version: &str) -> (PathBuf, PathBuf) {
+        let temp_root = std::env::temp_dir().join(format!("fishky-version-test-{}", uuid::Uuid::new_v4()));
+        let game_root = temp_root.join("Game");
+        let build_dir = game_root.join("FortniteGame").join("Build");
+        std::fs::create_dir_all(&build_dir).unwrap();
+        std::fs::write(
+            build_dir.join("Build.version"),
+            format!(r#"{{"BranchName":"++Fortnite+Release-{version}-CL-123"}}"#),
+        ).unwrap();
+        (temp_root, game_root)
+    }
+
+    #[test]
+    fn parses_fortnite_release_branch_version() {
+        assert_eq!(release_version_from_branch("++Fortnite+Release-13.40-CL-13715509"), Some("13.40".to_string()));
+    }
+
+    #[test]
+    fn keeps_distinct_release_versions_distinct() {
+        assert_eq!(release_version_from_branch("++Fortnite+Release-13.4-CL-1"), Some("13.4".to_string()));
+        assert_eq!(release_version_from_branch("++Fortnite+Release-13.400-CL-1"), Some("13.400".to_string()));
+        assert_eq!(release_version_from_branch("++Fortnite+Release-14.00-CL-1"), Some("14.00".to_string()));
+    }
+
+    #[test]
+    fn rejects_branch_without_release_version() {
+        assert_eq!(release_version_from_branch("++Fortnite+Main-CL-1"), None);
+    }
+
+    #[test]
+    fn detects_installed_release_version_without_restricting_it() {
+        let (temp_root, game_root) = make_game_root("13.40");
+        assert_eq!(detect_fortnite_version(&game_root.to_string_lossy()).unwrap(), "13.40");
+        std::fs::remove_dir_all(temp_root).unwrap();
+
+        let (temp_root, game_root) = make_game_root("13.41");
+        assert_eq!(detect_fortnite_version(&game_root.to_string_lossy()).unwrap(), "13.41");
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+}
 
 pub fn security_check() -> bool {
     unsafe {
@@ -151,52 +283,145 @@ pub async fn download(url: &str, filename: &str, path: &str, window: &tauri::Win
     Ok(())
 }
 
-pub async fn download_paks(game_root: &str, urls: String, app: &tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-    if urls.trim().is_empty() { return Ok(()); }
+fn get_pak_drop_folder() -> Result<std::path::PathBuf, String> {
+    let documents = dirs::document_dir().ok_or("Could not locate your Documents folder")?;
+    let folder = documents.join("Project Fishk").join("Paks");
+    std::fs::create_dir_all(&folder).map_err(|error| format!("Could not create PAK folder: {error}"))?;
+    Ok(folder)
+}
 
-    let window = app.get_window("main").ok_or("Main window not found")?;
-    let mut paks_path = std::path::PathBuf::from(game_root);
-    paks_path.push("FortniteGame\\Content\\Paks");
+fn copy_paks_from_folder(game_root: &str, source_folder: &std::path::Path) -> Result<usize, String> {
+    let paks_path = std::path::Path::new(game_root)
+        .join("FortniteGame")
+        .join("Content")
+        .join("Paks");
+    std::fs::create_dir_all(&paks_path).map_err(|error| format!("Could not access the game's Paks folder: {error}"))?;
 
-    if !paks_path.exists() {
-        std::fs::create_dir_all(&paks_path).map_err(|e| e.to_string())?;
-    }
+    let entries = std::fs::read_dir(source_folder)
+        .map_err(|error| format!("Could not read PAK folder {}: {error}", source_folder.display()))?;
+    let mut copied = 0;
 
-    let url_list: Vec<&str> = urls.split(',').filter(|s| !s.trim().is_empty()).collect();
-    
-    let _ = window.emit("download-start", true);
-
-    for (i, url) in url_list.iter().enumerate() {
-        let filename = url.split('/').last().unwrap_or("unknown.pak");
-        let target_path = paks_path.join(filename);
-        let progress = ((i + 1) as f32 / url_list.len() as f32 * 100.0) as u32;
-
-        if target_path.exists() {
-            let _ = window.emit("download-progress", progress);
-            continue; 
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Could not read a file in the PAK folder: {error}"))?;
+        if !entry.file_type().map_err(|error| error.to_string())?.is_file() {
+            continue;
         }
 
-        let _ = window.emit("update-status", format!("Installing: {}", filename));
-        let _ = window.emit("download-progress", progress);
-        
-        let target_str = target_path.to_str().unwrap();
+        let source = entry.path();
+        let extension = source.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
+        if !extension.eq_ignore_ascii_case("pak") && !extension.eq_ignore_ascii_case("sig") {
+            continue;
+        }
 
-        match download(url, filename, target_str, &window).await {
-            Ok(_) => {
-            }
-            Err(e) => {
-                let _ = window.emit("download-warning", format!("Failed: {} (Skipping in 3s)", filename));
-                println!("Download failed for {}: {}", filename, e);
+        let filename = entry.file_name();
+        let target = paks_path.join(filename);
+        if target.exists() {
+            continue;
+        }
 
-                tokio::time::sleep(Duration::from_secs(3)).await;
+        std::fs::copy(&source, &target).map_err(|error| {
+            format!("Could not copy {} into the game Paks folder: {error}", source.display())
+        })?;
+        copied += 1;
+    }
 
-                let _ = window.emit("update-status", "Resuming...");
-            }
+    Ok(copied)
+}
+
+pub fn sync_paks_from_folder(game_root: &str) -> Result<usize, String> {
+    let source_folder = get_pak_drop_folder()?;
+    copy_paks_from_folder(game_root, &source_folder)
+}
+
+#[tauri::command]
+pub fn open_pak_drop_folder_cmd() -> Result<String, String> {
+    let folder = get_pak_drop_folder()?;
+    std::process::Command::new("explorer.exe")
+        .arg(&folder)
+        .spawn()
+        .map_err(|error| format!("Could not open PAK folder: {error}"))?;
+    Ok(folder.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn sync_paks_cmd(game_root: String) -> Result<usize, String> {
+    sync_paks_from_folder(&game_root)
+}
+
+const BUBBLE_PAK_URL: &str = "https://github.com/saavagedog/PAKS/raw/refs/heads/main/pakchunkBubble-WindowsClient_P.pak";
+const BUBBLE_SIG_URL: &str = "https://github.com/saavagedog/SIG/raw/refs/heads/main/pakchunkBubble-WindowsClient_P.sig";
+
+fn remove_bubble_build_files(game_root: &std::path::Path) -> Result<(), String> {
+    let paks_path = game_root.join("FortniteGame").join("Content").join("Paks");
+    for filename in ["pakchunkBubble-WindowsClient_P.pak", "pakchunkBubble-WindowsClient_P.sig"] {
+        match std::fs::remove_file(paks_path.join(filename)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Could not remove {}: {}", filename, error)),
         }
     }
-    let _ = window.emit("download-complete", true);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn set_bubble_builds_cmd(game_roots: Vec<String>, enabled: bool, app: AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    if game_roots.is_empty() {
+        return Err("Add a Fortnite build before changing Bubble Builds.".to_string());
+    }
+
+    for game_root in game_roots {
+        let root = std::path::PathBuf::from(game_root);
+        if !enabled {
+            remove_bubble_build_files(&root)?;
+            continue;
+        }
+
+        let paks_path = root.join("FortniteGame").join("Content").join("Paks");
+        std::fs::create_dir_all(&paks_path).map_err(|error| error.to_string())?;
+        let window = app.get_window("main").ok_or("Main window not found")?;
+
+        for (url, filename) in [
+            (BUBBLE_SIG_URL, "pakchunkBubble-WindowsClient_P.sig"),
+            (BUBBLE_PAK_URL, "pakchunkBubble-WindowsClient_P.pak"),
+        ] {
+            let target_path = paks_path.join(filename);
+            if target_path.exists() {
+                continue;
+            }
+            let target = target_path.to_str().ok_or("Invalid Bubble Builds destination path")?;
+            download(url, filename, target, &window).await?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod bubble_build_tests {
+    use super::remove_bubble_build_files;
+
+    #[test]
+    fn removes_only_bubble_files_and_ignores_missing_files() {
+        let root = std::env::temp_dir().join(format!("fishky-bubble-test-{}", uuid::Uuid::new_v4()));
+        let paks = root.join("FortniteGame").join("Content").join("Paks");
+        std::fs::create_dir_all(&paks).unwrap();
+        let bubble_pak = paks.join("pakchunkBubble-WindowsClient_P.pak");
+        let bubble_sig = paks.join("pakchunkBubble-WindowsClient_P.sig");
+        let other_pak = paks.join("pakchunkOther-WindowsClient.pak");
+        std::fs::write(&bubble_pak, b"pak").unwrap();
+        std::fs::write(&bubble_sig, b"sig").unwrap();
+        std::fs::write(&other_pak, b"other").unwrap();
+
+        remove_bubble_build_files(&root).unwrap();
+        remove_bubble_build_files(&root).unwrap();
+
+        assert!(!bubble_pak.exists());
+        assert!(!bubble_sig.exists());
+        assert!(other_pak.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 pub fn suspend_process(pid: u32) -> (u32, bool) {
@@ -361,19 +586,22 @@ pub fn inject_dll(pid: u32, dll_path: &str) -> Result<(), String> {
         CloseHandle(handle);
         Ok(())
     }
+
 }
 
 pub async fn launch_fn(
     path: &str,
     redirect_url: String, 
     inject_urls: String,
-    paks_urls: String,
     app: AppHandle,
     email: String,
     password: String,
     eor: bool,
+    stretch_resolution_enabled: bool,
+    resolution_width: u32,
+    resolution_height: u32,
 ) -> Result<bool, String> {
-    download_paks(path, paks_urls, &app).await?;
+    sync_paks_from_folder(path)?;
 
     if let Err(e) = dll_replace(path, redirect_url, app.clone()).await {
         return Err(format!("Could not replace DLL: {}", e));
@@ -402,7 +630,7 @@ pub async fn launch_fn(
     let auth_email = format!("-AUTH_LOGIN={}", email);
     let auth_password = format!("-AUTH_PASSWORD={}", password);
 
-    let fort_args = vec![
+    let mut fort_args = vec![
         "-epicapp=Fortnite".to_string(),
         "-epicenv=Prod".to_string(),
         "-epiclocale=en-us".to_string(),
@@ -414,10 +642,21 @@ pub async fn launch_fn(
         "-fltoken=3db3ba5dcbd2e16703f3978d".to_string(),
         "-caldera=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2NvdW50X2lkIjoiYmU5ZGE1YzJmYmVhNDQwN2IyZjQwZWJhYWQ4NTlhZDQiLCJnZW5lcmF0ZWQiOjE2Mzg3MTcyNzgsImNhbGRlcmFHdWlkIjoiMzgxMGI4NjMtMmE2NS00NDU3LTliNTgtNGRhYjNiNDgyYTg2IiwiYWNQcm92aWRlciI6IkVhc3lBbnRpQ2hlYXQiLCJub3RlcyI6IiIsImZhbGxiYWNrIjpmYWxzZX0.VAWQB67RTxhiWOxx7DBjnzDnXyyEnX7OljJm-j2d88G_WgwQ9wrE6lwMEHZHjBd1ISJdUO1UVUqkfLdU5nofBQ".to_string(),
         "-AUTH_TYPE=epic".to_string(),
-        if eor { "-eor".to_string() } else { "".to_string() },
-        auth_email,
-        auth_password,
     ];
+
+    if eor {
+        fort_args.push("-eor".to_string());
+    }
+    if stretch_resolution_enabled {
+        if !(640..=7680).contains(&resolution_width) || !(480..=4320).contains(&resolution_height) {
+            return Err("Stretch resolution must be between 640x480 and 7680x4320.".to_string());
+        }
+        fort_args.push(format!("-ResX={resolution_width}"));
+        fort_args.push(format!("-ResY={resolution_height}"));
+        fort_args.push("-Fullscreen".to_string());
+    }
+    fort_args.push(auth_email);
+    fort_args.push(auth_password);
 
     let fort_cmd = std::process::Command::new(&fort_binary)
         .creation_flags(CREATE_NO_WINDOW)
@@ -426,6 +665,7 @@ pub async fn launch_fn(
         .map_err(|e| format!("Failed to spawn Fortnite: {}", e))?;
 
     let pid = fort_cmd.id();
+    PLAYER_GAME_PID.store(pid, Ordering::SeqCst);
 
     tokio::time::sleep(Duration::from_secs(60)).await;
 
@@ -577,7 +817,31 @@ pub async fn launch_fn(
         }
     }
 
-    #[tauri::command]
-    pub async fn download_paks_cmd(game_root: String, urls: String, app: tauri::AppHandle) -> Result<(), String> {
-    download_paks(&game_root, urls, &app).await
-}
+    #[cfg(test)]
+    mod pak_folder_tests {
+        use super::copy_paks_from_folder;
+
+        #[test]
+        fn copies_only_pak_and_sig_files_without_overwriting_existing_files() {
+            let root = std::env::temp_dir().join(format!("fishky-pak-folder-test-{}", uuid::Uuid::new_v4()));
+            let drop_folder = root.join("drop");
+            let game_root = root.join("game");
+            let target_folder = game_root.join("FortniteGame").join("Content").join("Paks");
+            std::fs::create_dir_all(&drop_folder).unwrap();
+            std::fs::create_dir_all(&target_folder).unwrap();
+            std::fs::write(drop_folder.join("custom.pak"), b"pak-data").unwrap();
+            std::fs::write(drop_folder.join("custom.sig"), b"sig-data").unwrap();
+            std::fs::write(drop_folder.join("readme.txt"), b"ignore").unwrap();
+            std::fs::write(target_folder.join("existing.pak"), b"original").unwrap();
+            std::fs::write(drop_folder.join("existing.pak"), b"replacement").unwrap();
+
+            let copied = copy_paks_from_folder(game_root.to_str().unwrap(), &drop_folder).unwrap();
+
+            assert_eq!(copied, 2);
+            assert_eq!(std::fs::read(target_folder.join("custom.pak")).unwrap(), b"pak-data");
+            assert_eq!(std::fs::read(target_folder.join("custom.sig")).unwrap(), b"sig-data");
+            assert_eq!(std::fs::read(target_folder.join("existing.pak")).unwrap(), b"original");
+            assert!(!target_folder.join("readme.txt").exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }

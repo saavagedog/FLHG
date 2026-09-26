@@ -1,13 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::env;
 use std::fs::create_dir_all;
-use sysinfo::System;
 use tauri::{AppHandle, Manager, Window};
 mod carter;
+mod host;
 use dotenvy::dotenv;
 
 #[tauri::command]
 fn close_launcher(app: tauri::AppHandle) {
+    host::stop_erbium_host();
     app.exit(0);
 }
 
@@ -23,7 +24,13 @@ async fn firstlaunch(
     email: String,
     password: String,
     eor: bool,
+    stretch_resolution_enabled: bool,
+    resolution_width: u32,
+    resolution_height: u32,
 ) -> Result<bool, String> {
+    if let Ok(version) = carter::detect_fortnite_version(&path) {
+        println!("Detected Fortnite {version} build at {path}");
+    }
     if !carter::security_check() {
         return Err("Security violation: Debugger detected. Please close UUU or x64dbg.".to_string());
     }
@@ -33,25 +40,33 @@ async fn firstlaunch(
 
     let dll_url = env::var("VITE_REDIRECT_LINK").unwrap_or_default();
     let inject_dlls = env::var("VITE_INJECT_DLLS_LINKS").unwrap_or_default();
-    let paks = env::var("VITE_PAKS_AND_SIGS_LINKS").unwrap_or_default();
 
     if dll_url.trim().is_empty() && inject_dlls.trim().is_empty() {
         println!("Launcher startup: no valid DLL replacement or injection URL configured, skipping DLL patch step.");
     }
 
-    carter::launch_fn(&path, dll_url, inject_dlls, paks, app, email, password, eor).await
+    carter::launch_fn(
+        &path,
+        dll_url,
+        inject_dlls,
+        app,
+        email,
+        password,
+        eor,
+        stretch_resolution_enabled,
+        resolution_width,
+        resolution_height,
+    ).await
 }
 
 #[tauri::command]
 fn is_fortnite_client_running() -> bool {
-    let mut system = System::new_all();
-    system.refresh_all();
-    for (_, process) in system.processes() {
-        if process.name().to_string_lossy().contains("FortniteClient-Win64-Shipping.exe") {
-            return true;
-        }
-    }
-    false
+    carter::is_player_client_running()
+}
+
+#[tauri::command]
+fn close_fortnite_client() -> Result<(), String> {
+    carter::close_player_client()
 }
 
 #[tauri::command]
@@ -95,9 +110,16 @@ async fn main() {
             window_close,
             firstlaunch,
             is_fortnite_client_running,
+            close_fortnite_client,
             close_launcher,
-            carter::download_paks_cmd,
+            carter::get_fortnite_version,
+            carter::sync_paks_cmd,
+            carter::open_pak_drop_folder_cmd,
+            carter::set_bubble_builds_cmd,
             carter::download_build_cmd
+            ,host::start_erbium_host,
+            host::stop_erbium_host,
+            host::is_erbium_host_running
         ])
         .run(tauri::generate_context!())
         .expect("Error starting the app");

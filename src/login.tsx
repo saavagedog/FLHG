@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import { open } from "@tauri-apps/api/shell";
 import { fetch, ResponseType, Body } from "@tauri-apps/api/http";
 import { Defaults } from "./defaults";
@@ -184,13 +183,9 @@ export default function Login() {
       {/* CENTERED LOGIN CARD */}
       <div className="relative flex flex-col items-center justify-center h-full w-full px-10">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-600/20 blur-[100px] rounded-full pointer-events-none" />
-    <AnimatePresence mode="wait">
+    <>
         {!isSuccess ? (
-        <motion.div
-          key="login-form"
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
+      <div
           className="relative w-full max-w-[400px] bg-black/60 backdrop-blur-2xl border border-white/10 p-10 rounded-2xl shadow-2xl z-10"
         >
           <div className="text-center mb-8">
@@ -244,36 +239,21 @@ export default function Login() {
               </div>
             </div>
 
-            <AnimatePresence mode="wait">
             {error && (
-              <motion.div
-                initial={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
-                animate={{ 
-                  opacity: 1, 
-                  height: "auto", 
-                  marginTop: 0, 
-                  marginBottom: 16
-                }}
-                exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
-                transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-              >
+              <div className="overflow-hidden">
                 <p className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-200 text-xs text-center font-medium">
                   {error}
                 </p>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
 
-            <motion.button
+            <button
               type="submit"
               disabled={loading}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
               className="cursor-pointer w-full rounded-lg px-6 py-3 font-bold text-sm uppercase tracking-wide text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/10"
             >
             {loading ? "Logging in..." : "Sign In"}
-            </motion.button>
+            </button>
           </form>
 
 
@@ -287,23 +267,11 @@ export default function Login() {
                 Create one
               </button>
             </div>
-        </motion.div>
+        </div>
         ) : (
-          <motion.div
-  key="welcome-msg"
-  initial={{ opacity: 0, scale: 0.9 }}
-  animate={{ opacity: 1, scale: 1 }}
-  transition={{ duration: 0.5 }}
-  className="text-center z-50"
->
+          <div className="text-center z-50">
   {/* NEW PROFILE PICTURE CONTAINER */}
-  <motion.div 
-  initial={{ scale: 0, rotate: -10 }} 
-  animate={{ scale: 1, rotate: 0 }} 
-  transition={{ type: "spring", delay: 0.2 }}
-  className="w-24 h-24 mx-auto mb-6 relative"
->
-  <div className="absolute inset-0 rounded-full bg-blue-500/30 blur-xl animate-pulse" />
+  <div className="w-24 h-24 mx-auto mb-6 relative">
   
   <div className="relative w-full h-full rounded-full border-2 border-blue-500 overflow-hidden bg-[#0b0c10] shadow-[0_0_40px_rgba(37,99,235,0.4)]">
   {discordId ? (
@@ -326,15 +294,15 @@ export default function Login() {
      {username.charAt(0).toUpperCase()}
   </div>
 </div>
-</motion.div>
+</div>
 
   <h2 className="text-4xl font-bold text-white tracking-tight">
     Welcome, <span className="text-blue-400">{username}</span>
   </h2>
   <p className="text-slate-400 mt-3 text-lg">Launching...</p>
-</motion.div>
+</div>
         )}
-        </AnimatePresence>
+  </>
       </div>
     </div>
   );

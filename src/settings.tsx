@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/api/dialog";
-import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import "./App.css";
 
@@ -35,18 +34,11 @@ function NavItem({ icon: Icon, label, active, collapsed, onClick }: {
       aria-label={label}
     >
       <Icon className="shrink-0" />
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <motion.span
-            initial={{ opacity: 0, x: -6 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -6 }}
-            className="truncate"
-          >
+      {!collapsed && (
+          <span className="truncate">
             {label}
-          </motion.span>
+          </span>
         )}
-      </AnimatePresence>
       {collapsed && (
         <span className="pointer-events-none absolute left-full ml-3 -translate-y-1/2 top-1/2 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-1 text-xs text-gray-100 opacity-0 shadow-lg ring-1 ring-gray-700/50 transition group-hover:opacity-100">
           {label}
@@ -158,23 +150,16 @@ function Settings() {
       {/* App frame */}
       <div className="h-full w-full flex">
         {/* Sidebar */}
-        <motion.aside
-          initial={false}
-          animate={{ width: collapsed ? 76 : 256 }}
-          transition={{ type: "spring", stiffness: 260, damping: 30 }}
+        <aside
           className="relative h-full bg-black/60 backdrop-blur-xl border-r border-white/10 shadow-2xl rounded-tl-xl rounded-bl-xl"
         >
           {/* Brand / Toggle */}
           <div data-tauri-drag-region className="flex items-center justify-center gap-2 px-4 py-4 border-b border-white/10">
             <div className="flex items-center gap-2">
               {!collapsed && (
-                <motion.span
-                  initial={{ opacity: 0, x: -6 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="text-lg font-bold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 to-yellow-500"
-                >
+                <span className="text-lg font-bold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 to-yellow-500">
                   SettingsMP
-                </motion.span>
+                </span>
               )}
             </div>
           </div>
@@ -198,29 +183,25 @@ function Settings() {
                       {user?.email ? user.email.split("@")[0] : "–"}
                     </p>
                   </div>
-                  <motion.a
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.99 }}
+                  <a
                     href="https://discord.com/channels/1360211736216469696/1413844727035596880"
                     target="_blank"
                     rel="noreferrer"
                     className="cursor-pointer ml-[1.3rem] px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-br from-purple-600 to-yellow-700 hover:bg-gradient-to-br hover:from-yellow-600 hover:to-purple-700 hover:text-white transition"
                   >
                     Donate
-                  </motion.a>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.99 }}
+                  </a>
+                  <button
                     onClick={handleLogout}
                     className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-br from-red-500 to-yellow-800/50 hover:bg-gradient-to-br hover:from-yellow-600 hover:to-red-700 hover:text-red transition"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z"/></svg>
-                  </motion.button>
+                  </button>
                 </>
               )}
             </div>
           </div>
-        </motion.aside>
+        </aside>
 
         {/* Content column */}
         <div className="flex-1 h-full flex flex-col overflow-hidden">
@@ -250,14 +231,12 @@ function Settings() {
                       {user?.email ?? "–"}
                     </span>
                   </div> <br />
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.98 }}
+                  <button
                     onClick={handleLogout}
                     className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-white/10 hover:bg-red-500/40 transition cursor-pointer"
                   >
                     Logout
-                  </motion.button>
+                  </button>
                 </div>
               </Section>
             </div>
