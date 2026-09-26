@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { fetch, ResponseType } from "@tauri-apps/api/http";
 import { Defaults } from "./defaults";
 import NewsPanel from "./NewsPanel";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { appWindow } from "@tauri-apps/api/window";
 import { listen } from '@tauri-apps/api/event';
 import "./launcher.css";
@@ -341,7 +341,7 @@ const LeaderboardPanel: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="launcher-enter max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       
       {/* Header Section */}
       <div className="flex items-center justify-between mb-6 px-1">
@@ -362,7 +362,7 @@ const LeaderboardPanel: React.FC = () => {
             </tr>
           </thead>
           
-          <tbody className="divide-y divide-white/[0.03]">
+          <tbody className="launcher-stagger divide-y divide-white/[0.03]">
             {loading ? (
               <tr>
                 <td colSpan={4} className="px-8 py-32 text-center">
@@ -529,7 +529,7 @@ const ShopPanel: React.FC = () => {
       <div className="h-[1px] flex-1 bg-gradient-to-r from-white/10 to-transparent" />
     </div>
     
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+    <div className="launcher-stagger grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
       {items.map((entry) => {
         const rawId = entry.itemGrants[0].split(":")[1];
         const info = cosmetics[rawId];
@@ -937,7 +937,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
   const bannerImage = current?.coverDataUrl || Defaults.PLACEHOLDER_IMAGE;
 
   return (
-      <div className="mb-8 animate-in fade-in duration-700">
+      <div className="launcher-enter mb-8 animate-in fade-in duration-700">
         {/* MAIN BANNER */}
         <div className="launcher-hero relative rounded-md overflow-hidden border border-white/10 transition-all">
           {/* Background Image with Smoother Gradient Overlay */}
@@ -1042,7 +1042,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
 
   /* Library styled like Epic store grid */
   const LibraryPanel: React.FC = () => (
-  <div className="animate-in fade-in duration-500">
+  <div className="launcher-enter animate-in fade-in duration-500">
     <div className="flex items-center justify-between mb-6 px-1">
       <div>
         <div className="text-2xl font-bold text-white">Library</div>
@@ -1051,7 +1051,7 @@ const LeftNav: React.FC<LeftNavProps> = ({ active, setActive, user, handleLogout
     </div>
 
     {/* Grid Section */}
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+    <div className="launcher-stagger grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
       {builds.length === 0 && (
         <div className="launcher-download-feature col-span-full min-h-[260px] grid grid-cols-1 md:grid-cols-[1.15fr_1fr] overflow-hidden rounded-md border border-white/10">
           <div className="relative min-h-48 overflow-hidden bg-black/30">
@@ -1157,7 +1157,7 @@ const SettingsPanel: React.FC<{
 }> = ({ eor, setEor, ror, setRor, bubbleBuilds, setBubbleBuilds, mobileBuilds, setMobileBuilds, accentColor, setAccentColor, theme, onSelectTheme, updateTrackerStatus, updateTrackerMessage, updateManifest, onCheckForUpdates, onInstallAvailableUpdate }) => {
 
   return (
-    <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="launcher-enter max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
       
       {/* HEADER SECTION */}
       <div className="flex items-center justify-between mb-8 px-1">
@@ -1167,7 +1167,7 @@ const SettingsPanel: React.FC<{
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+      <div className="launcher-stagger grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
         
         {/* GAMEPLAY MECHANICS CARD */}
         <div className="p-10 rounded-2xl border-2 border-white/10 bg-[#0b1724]/60 backdrop-blur-xl shadow-2xl transition-all hover:bg-[#0b1724]/80 flex flex-col justify-between">
@@ -1388,6 +1388,7 @@ const SettingsPanel: React.FC<{
 
 /* -------------------- Render main layout -------------------- */
   return (
+  <MotionConfig reducedMotion="user">
   <div className="launcher-app w-screen h-screen flex text-slate-100 relative overflow-hidden rounded-xl border border-white/10" data-theme={theme} style={{ "--launcher-lime": accentColor } as React.CSSProperties}>
 
     {CustomTitleBar()}
@@ -1434,7 +1435,7 @@ const SettingsPanel: React.FC<{
                 <button onClick={() => setActive("library")} className="launcher-accent-text cursor-pointer shrink-0 text-xs font-semibold hover:text-white transition-colors">Manage library <span aria-hidden="true">→</span></button>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1">
+              <div className="launcher-stagger grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1">
                 {builds.length === 0 ? (
                   <div className="min-h-28 col-span-full flex flex-col items-center justify-center rounded-md border border-dashed border-white/15 text-center">
                     <p className="text-sm font-medium text-slate-300">No builds installed yet</p>
@@ -1640,5 +1641,6 @@ const SettingsPanel: React.FC<{
       </div>
     </div>
   </div>
+  </MotionConfig>
 );
 }

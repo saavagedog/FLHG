@@ -133,7 +133,7 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
   };
 
   return (
-    <div className="mx-auto max-w-5xl pb-8">
+    <div className="launcher-enter mx-auto max-w-5xl pb-8">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-white">News</h1>
@@ -145,7 +145,7 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
       </div>
 
       {user?.isAdmin && (
-        <form onSubmit={publishNews} className="launcher-surface mb-6 rounded-md p-5 md:p-6">
+        <form onSubmit={publishNews} className="launcher-enter launcher-surface mb-6 rounded-md p-5 md:p-6">
           <div className="mb-5 flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-md bg-[var(--launcher-lime)]/10 text-[var(--launcher-lime)]"><Newspaper size={18} /></div>
             <div>
@@ -189,7 +189,7 @@ export default function NewsPanel({ user }: { user: NewsUser | null }) {
           <p className="mt-1 text-xs text-slate-500">New updates from the team will appear here.</p>
         </div>
       ) : (
-        <div className="divide-y divide-white/10 border-y border-white/10">
+        <div className="launcher-stagger divide-y divide-white/10 border-y border-white/10">
           {items.map((item) => (
             <article key={item.id} className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_260px]">
               <div className="min-w-0">
