@@ -1,4 +1,5 @@
 name: Release Project Fishk
+run-name: Release ${{ github.ref_name }}
 
 on:
   push:
@@ -33,7 +34,22 @@ jobs:
 
       - name: Prepare build environment
         shell: pwsh
-        run: Copy-Item .env.example .env
+        run: |
+          Copy-Item .env.example .env
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Release tag must use vMAJOR.MINOR.PATCH format." }
+
+          $configPath = 'src-tauri/tauri.conf.json'
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $config.package.version = $version
+          $config | ConvertTo-Json -Depth 100 | Set-Content $configPath -Encoding utf8
+
+          $cargoPath = 'src-tauri/Cargo.toml'
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = [regex]::Replace($cargo, '(?m)^version = "[^"]+"', "version = `"$version`"", 1)
+          Set-Content $cargoPath $cargo -Encoding utf8
+          "version=$version" >> $env:GITHUB_OUTPUT
+        id: release-version
 
       - name: Build and publish signed updater release
         uses: tauri-apps/tauri-action@v0.5.20
@@ -42,7 +58,7 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           VITE_UPDATER_CONFIGURED: "true"
-          VITE_LAUNCHER_VERSION: "1.0.28"
+          VITE_LAUNCHER_VERSION: ${{ steps.release-version.outputs.version }}
         with:
           tagName: v__VERSION__
           releaseName: Project Fishk v__VERSION__
